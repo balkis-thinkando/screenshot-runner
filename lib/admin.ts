@@ -24,11 +24,21 @@ export async function openOrgOverview(page: Page, s: Settings) {
   }
 
   // Step 3: make sure Overview is open
+  // Selecting an org usually lands on Overview; the title can take a few seconds to render
   await page.locator(sidebar).waitFor();
-  if (!/overview$/i.test(await page.locator("h1").innerText())) {
+  const title = page.locator("h1", { hasText: /overview$/i });
+  if (!(await title.waitFor({ timeout: 20_000 }).then(() => true, () => false))) {
+    await page.keyboard.press("Escape"); // onboarding pop-ups (e.g. "We decluttered...") cover the sidebar
     await page.locator(sidebar).getByRole("link", { name: "Overview", exact: true }).click();
+    await title.waitFor();
   }
-  await page.locator("h1", { hasText: /overview$/i }).waitFor();
+
+  // Close onboarding pop-ups (e.g. "We decluttered the left navigation"); hiding them leaves the page dimmed
+  const popup = page.locator('[role="dialog"]');
+  if (await popup.first().isVisible()) {
+    await page.keyboard.press("Escape");
+    await popup.first().waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
+  }
   await page.locator('[data-testid*="chart"] svg').first().waitFor(); // charts rendered
   // Monitor cards keep loading after the first chart appears; give them time to settle
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
