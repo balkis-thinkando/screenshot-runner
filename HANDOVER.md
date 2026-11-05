@@ -97,6 +97,11 @@ Verdicts: `unchanged`, `needs_review`, `cosmetic`, `material`, `steps_broken`, `
   dam-cdn/ctfassets and the preceding `<h1-4>`, upserts `alcat_lessons`, replaces `lesson_screenshots`.
   Body `{"offset":0,"limit":50}`; returns `next_offset` (null when done). Also `{"debug_url": "..."}`.
   `verify_jwt` is on; it is invoked with the project's anon key.
+- **Edge Function `create-shot-ticket`** (5 Nov 2026): creates a SHOT Task, sets Learning Content
+  (customfield_13178) to the lesson's AlCat object and attaches the capture sent in the request
+  (never stored). Dedupes on label `asset-<asset_id>`. Auth: service role key, or a one-time token from
+  `select public.mint_shot_ticket_token()` (table `shot_ticket_tokens`, 15 min, single use).
+  Caller: `scripts/create-shot-ticket.mjs`. Source: `supabase/functions/create-shot-ticket/index.ts`.
 - **Extension `pg_net`** enabled (used to call the function from SQL).
 - **SQL function `public._scan_batch(p_offset int)`** — calls the Edge Function for one batch via pg_net.
   Execute revoked from anon/authenticated. Contains the (public) anon key.
