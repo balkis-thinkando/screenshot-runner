@@ -2,7 +2,8 @@
 // sets Learning Content and attaches the image. The capture is not stored anywhere else.
 //
 // node scripts/create-shot-ticket.mjs --asset <asset_id> --png <capture.png> --verdict material|steps_broken
-//      --changes <changes.txt> [--checks <check-results.json>] [--dry-run]
+//      --changes <changes.txt> [--dry-run]
+// Rewrite an existing ticket's description instead (no new ticket, --png optional): add --issue SHOT-123
 //
 // Auth: SUPABASE_SERVICE_ROLE_KEY, or SHOT_TOKEN (from select public.mint_shot_ticket_token())
 // with SUPABASE_ANON_KEY. SUPABASE_URL is required.
@@ -17,11 +18,11 @@ const { values: a } = parseArgs({
     png: { type: "string" },
     verdict: { type: "string" },
     changes: { type: "string" },
-    checks: { type: "string" },
+    issue: { type: "string" },
     "dry-run": { type: "boolean", default: false },
   },
 });
-for (const k of ["asset", "png", "verdict", "changes"]) if (!a[k]) throw new Error(`--${k} is required`);
+for (const k of ["asset", "verdict", "changes", ...(a.issue ? [] : ["png"])]) if (!a[k]) throw new Error(`--${k} is required`);
 
 const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY, SHOT_TOKEN } = process.env;
 if (!SUPABASE_URL) throw new Error("Set SUPABASE_URL");
@@ -36,12 +37,11 @@ const form = new FormData();
 form.append("asset_id", a.asset);
 form.append("verdict", a.verdict);
 form.append("changes", readFileSync(a.changes, "utf8"));
-if (a.checks) form.append("check_results", readFileSync(a.checks, "utf8"));
+if (a.issue) form.append("issue_key", a.issue);
 if (a["dry-run"]) form.append("dry_run", "true");
-form.append("screenshot", new Blob([readFileSync(a.png)], { type: "image/png" }), basename(a.png));
+if (a.png) form.append("screenshot", new Blob([readFileSync(a.png)], { type: "image/png" }), basename(a.png));
 
 const res = await fetch(`${SUPABASE_URL}/functions/v1/create-shot-ticket`, { method: "POST", headers, body: form });
 const out = await res.json();
-if (out.fields) delete out.fields.description; // long; shown in Jira
 console.log(JSON.stringify(out, null, 2));
 if (!res.ok) process.exit(1);
