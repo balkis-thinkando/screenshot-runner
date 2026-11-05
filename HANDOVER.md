@@ -125,7 +125,7 @@ lib/recipe.ts      runRecipe(): navigate → tweak → checks → capture → co
 lib/tweaks.ts      renameOrg(from,to), anonymize(), hideMessages([...startsWith])
 lib/supabase.ts    service-role client + settings() from recipe_settings
 recipes/*.spec.ts  one file per screenshot (navigation, checks, mask)
-baselines/*.png    last approved capture per screenshot (local only, gitignored; never committed)
+baselines/*.png    last approved capture per screenshot (committed to the private GitHub repo for comparison only; owner decision 5 Nov 2026)
 auth/state.json    saved signed-in session (gitignored; CI secret)
 ```
 

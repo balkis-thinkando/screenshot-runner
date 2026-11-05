@@ -4,4 +4,3 @@ results/
 test-results/
 playwright-report/
 .env
-baselines/
