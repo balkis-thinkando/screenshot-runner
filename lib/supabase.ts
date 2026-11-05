@@ -23,6 +23,12 @@ let cached: Settings | null = null;
 /** Reads public.recipe_settings once per run. */
 export async function settings(): Promise<Settings> {
   if (cached) return cached;
+  // Dry runs may pass the settings in instead, so no service key is needed
+  const { TEST_SITE, TEST_ORG, DISPLAY_ORG_NAME, RECORD_RUNS } = process.env;
+  if (RECORD_RUNS === "false" && TEST_SITE && TEST_ORG && DISPLAY_ORG_NAME) {
+    cached = { test_site: TEST_SITE, test_org: TEST_ORG, display_org_name: DISPLAY_ORG_NAME };
+    return cached;
+  }
   const { data, error } = await db().from("recipe_settings").select("key, value");
   if (error) throw error;
   const map = Object.fromEntries((data ?? []).map((r) => [r.key, r.value]));

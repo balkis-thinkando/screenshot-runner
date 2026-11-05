@@ -4,36 +4,16 @@
 //          https://dam-cdn.atl.orangelogic.com/AssetLink/5bph3ptlw74w0622n11j2040iotd1ao5.png
 // Recipe:  public.screenshot_recipes where asset_id = '5bph3ptlw74w0622n11j2040iotd1ao5'
 
-import { runRecipe, Blocked } from "../lib/recipe";
+import { runRecipe } from "../lib/recipe";
+import { openOrgOverview, sidebar } from "../lib/admin";
 import { renameOrg, anonymize, hideMessages } from "../lib/tweaks";
-
-const sidebar = '[data-testid="side-nav-view"]';
 
 runRecipe({
   file: "AUC-330-2",
   assetId: "5bph3ptlw74w0622n11j2040iotd1ao5",
   title: "AUC-330 #2 — Atlassian Administration overview",
 
-  async navigate(page, s) {
-    // Step 1: open Atlassian Administration as an org admin
-    await page.goto("https://admin.atlassian.com/");
-
-    // Step 2: pick the test organization if the account administers several
-    const orgLink = page.getByRole("link", { name: s.test_org, exact: true });
-    if (await orgLink.isVisible({ timeout: 10_000 }).catch(() => false)) {
-      await orgLink.click();
-    } else if (!(await page.locator(sidebar).isVisible().catch(() => false))) {
-      throw new Blocked(`Organization "${s.test_org}" not found in the organization list`);
-    }
-
-    // Step 3: make sure Overview is open
-    await page.locator(sidebar).waitFor();
-    if (!/overview$/i.test(await page.locator("h1").innerText())) {
-      await page.locator(sidebar).getByRole("link", { name: "Overview", exact: true }).click();
-    }
-    await page.locator("h1", { hasText: /overview$/i }).waitFor();
-    await page.locator('[data-testid*="chart"] svg').first().waitFor(); // charts rendered
-  },
+  navigate: openOrgOverview,
 
   async tweak(page, s) {
     await hideMessages(page, ["We decluttered the left navigation"]);
