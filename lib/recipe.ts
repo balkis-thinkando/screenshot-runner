@@ -42,7 +42,13 @@ export type Recipe = {
  */
 export function runRecipe(r: Recipe) {
   test(r.title, { tag: `@${r.product}` }, async ({ page }, info) => {
-    const s = await settings();
+    let s: Settings;
+    try {
+      s = await settings();
+    } catch (e) {
+      logVerdict({ file: r.file, title: r.title, verdict: "error", failedStep: `Could not read recipe_settings: ${(e as Error).message}`, failed: [] });
+      throw e;
+    }
     const checks = new Checks();
     let verdict: "unchanged" | "needs_review" | "blocked" = "unchanged";
     let failedStep: string | null = null;
@@ -58,12 +64,19 @@ export function runRecipe(r: Recipe) {
     }
 
     if (!failedStep) {
-      await r.tweak(page, s);
-      await r.checks(page, checks, s);
+      try {
+        await r.tweak(page, s);
+        await r.checks(page, checks, s);
+        // Capture for the ticket / AI review
+        capturePath = info.outputPath(`${r.file}.png`);
+        await page.screenshot({ path: capturePath });
+      } catch (e) {
+        verdict = "needs_review";
+        failedStep = `Tweak or capture failed: ${(e as Error).message}`;
+      }
+    }
 
-      // Capture for the ticket / AI review
-      capturePath = info.outputPath(`${r.file}.png`);
-      await page.screenshot({ path: capturePath });
+    if (!failedStep) {
 
       // Compare with the last approved capture, ignoring dynamic areas
       try {
@@ -81,16 +94,25 @@ export function runRecipe(r: Recipe) {
     // A failed attempt is retried (slow loads); only record the final attempt so a run isn't stored twice
     const finalAttempt = verdict === "unchanged" || info.retry >= info.project.retries;
     if (finalAttempt) {
-      await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
-      // One line per screenshot for scripts/summary.mjs (job summary and blocked alert)
-      mkdirSync("results", { recursive: true });
-      appendFileSync("results/verdicts.jsonl", JSON.stringify({ file: r.file, title: r.title, verdict, failedStep, failed: checks.results.filter((c) => c.result === "fail").map((c) => c.check) }) + "\n");
+      logVerdict({ file: r.file, title: r.title, verdict, failedStep, failed: checks.results.filter((c) => c.result === "fail").map((c) => c.check) });
+      try {
+        await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
+      } catch (e) {
+        logVerdict({ file: r.file, title: r.title, verdict: "error", failedStep: `Could not record the run in Supabase: ${(e as Error).message}`, failed: [] });
+        throw e;
+      }
     }
 
     // Make the test report readable on its own
     await info.attach("check-results", { body: JSON.stringify(checks.results, null, 2), contentType: "application/json" });
     expect(verdict, failedStep ?? "See check-results attachment").toBe("unchanged");
   });
+}
+
+/** One line per screenshot for scripts/summary.mjs (job summary and alerts). */
+function logVerdict(line: { file: string; title: string; verdict: string; failedStep: string | null; failed: string[] }) {
+  mkdirSync("results", { recursive: true });
+  appendFileSync("results/verdicts.jsonl", JSON.stringify(line) + "\n");
 }
 
 async function record(
