@@ -84,12 +84,13 @@ Text fields may contain placeholders `{test_site}`, `{test_org}`, `{display_org_
 **`recipe_runs`** — one row per replay
 `recipe_id → screenshot_recipes.id (cascade)`, `run_at`, `test_site`, `verdict`, `check_results jsonb`
 (`[{check, result, detail}]`), `summary`, `run_by`, `failed_step`, `baseline_match bool`,
-`capture_path` (path in storage bucket).
+`capture_path` (unused: captures are not stored).
 Verdicts: `unchanged`, `needs_review`, `cosmetic`, `material`, `steps_broken`, `blocked`
 (see section 5).
 
 ### Other Supabase objects
-- **Storage bucket `recipe-captures`** (private) — runner uploads captures here.
+- No storage bucket. Captures are never stored in Supabase; they are attached to the SHOT work item only
+  (bucket `recipe-captures` deleted 5 Nov 2026).
 - **Edge Function `scan-lesson-screenshots`** (v4) — builds the inventory:
   reads all Lessons from Assets (secrets `ATLASSIAN_API_TOKEN`, `ATLASSIAN_EMAIL`), keeps those whose
   Contentful ID exists in `lessons`, fetches each published page, regex-scans `<main>` for `<img>` on
@@ -119,7 +120,7 @@ lib/recipe.ts      runRecipe(): navigate → tweak → checks → capture → co
 lib/tweaks.ts      renameOrg(from,to), anonymize(), hideMessages([...startsWith])
 lib/supabase.ts    service-role client + settings() from recipe_settings
 recipes/*.spec.ts  one file per screenshot (navigation, checks, mask)
-baselines/*.png    last approved capture per screenshot (created on first run; commit them)
+baselines/*.png    last approved capture per screenshot (local only, gitignored; never committed)
 auth/state.json    saved signed-in session (gitignored; CI secret)
 ```
 
@@ -135,7 +136,7 @@ Run flow and verdict logic (`lib/recipe.ts`):
 - Else tweaks, checks (each recorded pass/fail with detail; never stops early), screenshot, then
   `toHaveScreenshot` against `baselines/{file}.png` with `mask` and `maxDiffPixelRatio 0.002`.
 - All checks pass **and** baseline matches → **unchanged** (no AI). Otherwise **needs_review**.
-- Records a `recipe_runs` row (`run_by = playwright`) and uploads the capture to `recipe-captures`.
+- Records a `recipe_runs` row (`run_by = playwright`) The capture stays in `test-results/` for the SHOT work item.
 
 Selectors confirmed on the live admin page (5 Nov 2026): sidebar `[data-testid="side-nav-view"]`
 (nav aria-label "Sidebar"), org switcher `[data-testid="org-selector-dropdown--trigger"]`, charts under
@@ -158,7 +159,7 @@ Page tweaks are **display-only DOM edits**. Never change real account or org set
 | steps_broken | AI review | lesson steps no longer work in product | Jira ticket (+ lesson text) |
 | blocked | Playwright | login/permissions/test data problem | fix environment; **never** a ticket |
 
-AI review (to build): input = lesson image (`image_url`), new capture (`capture_path`), recipe
+AI review (to build): input = lesson image (`image_url`), new capture (local file from the run), recipe
 `must_show` + `ignore` + `check_results`. Output = verdict + summary, written back to the run.
 One vision call per needs_review run. If a script failed because selectors moved but the page is
 still correct, the AI should propose a script fix, not a ticket.

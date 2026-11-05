@@ -1,5 +1,4 @@
 import { test, expect, Page, Locator } from "@playwright/test";
-import { readFileSync } from "node:fs";
 import { db, settings, Settings } from "./supabase";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
@@ -96,15 +95,7 @@ async function record(
   const { data: recipe, error } = await db().from("screenshot_recipes").select("id").eq("asset_id", r.assetId).single();
   if (error || !recipe) throw new Error(`No screenshot_recipes row for asset ${r.assetId}`);
 
-  let storagePath: string | null = null;
-  if (run.capturePath) {
-    storagePath = `${r.file}/${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
-    const { error: upErr } = await db().storage.from("recipe-captures").upload(storagePath, readFileSync(run.capturePath), {
-      contentType: "image/png",
-    });
-    if (upErr) throw upErr;
-  }
-
+  // Captures are never stored in Supabase; they only go to the SHOT work item as an attachment
   const { error: insErr } = await db().from("recipe_runs").insert({
     recipe_id: recipe.id,
     test_site: s.test_site,
@@ -112,7 +103,6 @@ async function record(
     check_results: run.checks,
     failed_step: run.failedStep,
     baseline_match: run.baselineMatch,
-    capture_path: storagePath,
     run_by: "playwright",
   });
   if (insErr) throw insErr;
