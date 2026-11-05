@@ -1,0 +1,15 @@
+{
+  "name": "screenshot-runner",
+  "private": true,
+  "description": "Replays Atlassian University lesson screenshot recipes with Playwright and records the results in Supabase.",
+  "scripts": {
+    "test": "playwright test",
+    "login": "playwright codegen --viewport-size=1321,853 --save-storage=auth/state.json https://admin.atlassian.com",
+    "update-baselines": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2",
+    "@supabase/supabase-js": "2.45.4",
+    "typescript": "5.6.3"
+  }
+}
