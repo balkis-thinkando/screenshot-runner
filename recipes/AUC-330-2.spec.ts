@@ -12,6 +12,7 @@ runRecipe({
   file: "AUC-330-2",
   assetId: "5bph3ptlw74w0622n11j2040iotd1ao5",
   title: "AUC-330 #2 — Atlassian Administration overview",
+  product: "admin",
 
   navigate: openOrgOverview,
 

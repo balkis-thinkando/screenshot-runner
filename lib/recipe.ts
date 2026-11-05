@@ -1,4 +1,5 @@
 import { test, expect, Page, Locator } from "@playwright/test";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { db, settings, Settings } from "./supabase";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
@@ -26,6 +27,7 @@ export type Recipe = {
   file: string; // e.g. AUC-330-2 — also the baseline image name
   assetId: string; // links to public.screenshot_recipes.asset_id
   title: string;
+  product: string; // schedule group, e.g. "admin"; run one group with --grep @admin (see schedule.json)
   navigate: (page: Page, s: Settings) => Promise<void>;
   tweak: (page: Page, s: Settings) => Promise<void>;
   checks: (page: Page, c: Checks, s: Settings) => Promise<void>;
@@ -39,7 +41,7 @@ export type Recipe = {
  *  blocked      — sign-in expired, org not found, missing test data. Fix the environment.
  */
 export function runRecipe(r: Recipe) {
-  test(r.title, async ({ page }, info) => {
+  test(r.title, { tag: `@${r.product}` }, async ({ page }, info) => {
     const s = await settings();
     const checks = new Checks();
     let verdict: "unchanged" | "needs_review" | "blocked" = "unchanged";
@@ -78,7 +80,12 @@ export function runRecipe(r: Recipe) {
 
     // A failed attempt is retried (slow loads); only record the final attempt so a run isn't stored twice
     const finalAttempt = verdict === "unchanged" || info.retry >= info.project.retries;
-    if (finalAttempt) await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
+    if (finalAttempt) {
+      await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
+      // One line per screenshot for scripts/summary.mjs (job summary and blocked alert)
+      mkdirSync("results", { recursive: true });
+      appendFileSync("results/verdicts.jsonl", JSON.stringify({ file: r.file, title: r.title, verdict, failedStep, failed: checks.results.filter((c) => c.result === "fail").map((c) => c.check) }) + "\n");
+    }
 
     // Make the test report readable on its own
     await info.attach("check-results", { body: JSON.stringify(checks.results, null, 2), contentType: "application/json" });

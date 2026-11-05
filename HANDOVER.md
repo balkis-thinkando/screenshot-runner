@@ -129,6 +129,11 @@ baselines/*.png    last approved capture per screenshot (committed to the privat
 auth/state.json    saved signed-in session (gitignored; CI secret)
 ```
 
+Scheduling (5 Nov 2026): `.github/workflows/monthly-check.yml` runs one product per day on days 1-7 of
+each month (`schedule.json`: day -> `Recipe.product` tag). Baselines are per OS (`baselines/{platform}/`):
+run the workflow by hand once with update_baselines ticked to create the Linux ones. The job fails
+(GitHub emails the owner) only when a screenshot is blocked or nothing ran (`scripts/summary.mjs`).
+
 Status: **type-checks and lists, but has never been run against Atlassian** (the previous environment
 could not reach Atlassian). First job is to run it for real (section 7, task 1).
 

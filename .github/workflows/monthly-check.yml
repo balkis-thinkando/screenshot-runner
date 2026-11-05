@@ -1,0 +1,113 @@
+# Monthly screenshot check: one product per day during the first week of each month
+# (schedule.json maps day of month -> product tag). Results go to Supabase (recipe_runs) and the
+# job summary. The job fails, and GitHub emails you, when a screenshot is blocked (usually an
+# expired sign-in) or nothing ran. needs_review results do not fail the job.
+#
+# Run it by hand: Actions > Monthly screenshot check > Run workflow. Tick "update_baselines" to save
+# today's captures as the new Linux baselines (only after reviewing them; it commits to main).
+#
+# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account).
+
+name: Monthly screenshot check
+
+on:
+  schedule:
+    - cron: "0 6 1-7 * *" # 06:00 UTC, days 1-7 of each month
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Product tag to run (e.g. admin), or all"
+        required: true
+        default: all
+      update_baselines:
+        description: "Save today's captures as the new baselines (commits them)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshot-check
+  cancel-in-progress: false
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      product: ${{ steps.pick.outputs.product }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        env:
+          INPUT_PRODUCT: ${{ inputs.product }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            p="$INPUT_PRODUCT"
+          else
+            p=$(node -e 'console.log(require("./schedule.json").days[String(new Date().getUTCDate())] ?? "")')
+          fi
+          echo "product=$p" >> "$GITHUB_OUTPUT"
+          echo "Product today: ${p:-nothing scheduled}"
+
+  check:
+    needs: pick
+    if: needs.pick.outputs.product != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write # only used to commit baselines when update_baselines is ticked
+    env:
+      PRODUCT: ${{ needs.pick.outputs.product }}
+      UPDATE_BASELINES: ${{ inputs.update_baselines || false }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Write sign-in session
+        env:
+          AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+        run: |
+          if [ -z "$AUTH_STATE_JSON" ]; then
+            echo "::error::The AUTH_STATE_JSON secret is not set. Sign in with the test account (npm run login) and paste auth/state.json into the secret."
+            exit 1
+          fi
+          mkdir -p auth
+          printf '%s' "$AUTH_STATE_JSON" > auth/state.json
+
+      - name: Run screenshots
+        continue-on-error: true # failed checks are expected; the summary step decides
+        run: |
+          args=""
+          [ "$PRODUCT" = "all" ] || args="--grep @$PRODUCT"
+          if [ "$UPDATE_BASELINES" = "true" ]; then
+            args="$args --update-snapshots"
+            export RECORD_RUNS=false
+          fi
+          npx playwright test $args
+
+      - name: Summary
+        run: node scripts/summary.mjs
+
+      - name: Commit new baselines
+        if: env.UPDATE_BASELINES == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add baselines
+          if git diff --cached --quiet; then
+            echo "Baselines unchanged."
+          else
+            git commit -m "Update baselines ($PRODUCT) from run ${{ github.run_id }}"
+            git push
+          fi

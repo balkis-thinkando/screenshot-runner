@@ -16,6 +16,7 @@ runRecipe({
   file: "AUC-330-3",
   assetId: "gdtaqu87645h2sxi76m7qq0tgg15a86g",
   title: "AUC-330 #3 — Atlassian Administration sidebar tabs",
+  product: "admin",
 
   navigate: openOrgOverview,
 

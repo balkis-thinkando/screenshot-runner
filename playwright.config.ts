@@ -7,7 +7,7 @@ export default defineConfig({
   retries: 1, // one retry absorbs slow loads before anything is flagged
   reporter: [["list"], ["json", { outputFile: "results/report.json" }]],
   // Baselines = the last approved capture of each screenshot, kept in the repo
-  snapshotPathTemplate: "baselines/{arg}{ext}",
+  snapshotPathTemplate: "baselines/{platform}/{arg}{ext}",
   use: {
     // Same size as the lesson images, so captures and baselines line up
     viewport: { width: 1321, height: 853 },
