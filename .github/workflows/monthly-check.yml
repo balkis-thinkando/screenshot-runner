@@ -6,7 +6,7 @@
 # Run it by hand: Actions > Monthly screenshot check > Run workflow. Tick "update_baselines" to save
 # today's captures as the new Linux baselines (only after reviewing them; it commits to main).
 #
-# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account).
+# Secrets: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account).
 
 name: Monthly screenshot check
 
@@ -60,7 +60,7 @@ jobs:
     env:
       PRODUCT: ${{ needs.pick.outputs.product }}
       UPDATE_BASELINES: ${{ inputs.update_baselines || false }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_URL: https://pduavmiyphkoekslpeld.supabase.co # project API address (not secret)
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - uses: actions/checkout@v4
