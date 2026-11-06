@@ -1,5 +1,5 @@
 import { test, expect, Page, Locator } from "@playwright/test";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { db, settings, Settings } from "./supabase";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
@@ -32,6 +32,7 @@ export type Recipe = {
   tweak: (page: Page, s: Settings) => Promise<void>;
   checks: (page: Page, c: Checks, s: Settings) => Promise<void>;
   mask?: (page: Page) => Locator[]; // dynamic areas ignored when comparing to the baseline
+  clip?: { x: number; y: number; width: number; height: number }; // capture only this part of the window
 };
 
 /**
@@ -69,7 +70,7 @@ export function runRecipe(r: Recipe) {
         await r.checks(page, checks, s);
         // Capture for the ticket / AI review
         capturePath = info.outputPath(`${r.file}.png`);
-        await page.screenshot({ path: capturePath });
+        await page.screenshot({ path: capturePath, clip: r.clip });
       } catch (e) {
         verdict = "needs_review";
         failedStep = `Tweak or capture failed: ${(e as Error).message}`;
@@ -78,13 +79,16 @@ export function runRecipe(r: Recipe) {
 
     if (!failedStep) {
 
-      // Compare with the last approved capture, ignoring dynamic areas
+      // Compare with the last approved capture, ignoring dynamic areas. With no baseline yet, Playwright
+      // writes one without throwing, so a first run must not count as a match.
+      const hasBaseline = existsSync(info.snapshotPath(`${r.file}.png`));
       try {
         await expect(page).toHaveScreenshot(`${r.file}.png`, {
           mask: r.mask?.(page) ?? [],
+          clip: r.clip,
           maxDiffPixelRatio: 0.002,
         });
-        baselineMatch = true;
+        baselineMatch = hasBaseline;
       } catch {
         baselineMatch = false;
       }
@@ -94,7 +98,16 @@ export function runRecipe(r: Recipe) {
     // A failed attempt is retried (slow loads); only record the final attempt so a run isn't stored twice
     const finalAttempt = verdict === "unchanged" || info.retry >= info.project.retries;
     if (finalAttempt) {
-      logVerdict({ file: r.file, title: r.title, verdict, failedStep, failed: checks.results.filter((c) => c.result === "fail").map((c) => c.check) });
+      logVerdict({
+        file: r.file,
+        title: r.title,
+        verdict,
+        failedStep,
+        failed: [
+          ...checks.results.filter((c) => c.result === "fail").map((c) => c.check),
+          ...(baselineMatch === false ? ["Capture differs from the reference image (or there is none yet)"] : []),
+        ],
+      });
       try {
         await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
       } catch (e) {
