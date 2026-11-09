@@ -10,7 +10,7 @@ import { Settings } from "./supabase";
  */
 export async function openSignedIn(page: Page, s: Settings, path: string) {
   const host = new URL(s.test_site).hostname;
-  await page.goto(`https://id.atlassian.com/login?continue=${encodeURIComponent(s.test_site + path)}`);
+  await page.goto(`https://id.atlassian.com/login?continue=${encodeURIComponent(s.test_site + path)}`, { waitUntil: "commit" });
   await page.waitForURL((u) => u.hostname === host, { timeout: 60_000, waitUntil: "commit" }).catch(() => {});
   if (new URL(page.url()).hostname !== host) throw new Blocked("Session expired: stopped at Atlassian sign-in");
 }

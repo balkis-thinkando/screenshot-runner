@@ -9,8 +9,8 @@ export const mainContent = "#AkMainContent";
 export const adminButton = (page: Page) => page.getByRole("button", { name: "Confluence administration", exact: true });
 
 async function open(page: Page, url: string, ready: Locator, what: string) {
-  await page.goto(url);
-  await ready.waitFor({ timeout: 30_000 }).catch(() => {});
+  await page.goto(url, { waitUntil: "commit" });
+  await ready.waitFor({ timeout: 60_000 }).catch(() => {});
   if (new URL(page.url()).hostname === "id.atlassian.com") throw new Blocked("Session expired: redirected to sign-in");
   if (!(await ready.isVisible())) {
     const denied = await page.getByText(/don't have (permission|access)|not authorized/i).first().isVisible().catch(() => false);

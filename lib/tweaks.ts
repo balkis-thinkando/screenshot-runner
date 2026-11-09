@@ -211,3 +211,63 @@ export async function spotlightAreas(page: Page, areas: (Locator | Locator[])[])
     document.body.appendChild(svg);
   }, rects);
 }
+
+/**
+ * Lesson-style hotspot markers without an outline: an orange dot on each item with a line running
+ * "down" from below the label or "left" from the item's left edge. Use with spotlightAreas().
+ */
+export async function markers(page: Page, items: Locator, direction: "down" | "left", lengths: number[] = [150]) {
+  const rects = (await items.evaluateAll((els) =>
+    els.map((el) => {
+      // Label text box, not the whole (possibly full-width) item
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const r = range.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height, boxLeft: box.left, boxBottom: box.bottom };
+    }),
+  )).filter((r) => r.width > 0);
+  await page.evaluate(
+    ([rects, direction, lengths]) => {
+      const orange = "#FCA700";
+      const add = (css: string) => {
+        const d = document.createElement("div");
+        d.setAttribute("data-screenshot-tweak", "markers");
+        d.style.cssText = `position:fixed;pointer-events:none;z-index:2147483647;${css}`;
+        document.body.appendChild(d);
+      };
+      rects.forEach((r, i) => {
+        const length = lengths[i % lengths.length];
+        const { x, y } =
+          direction === "down" ? { x: r.x + r.width / 2, y: r.boxBottom + 2 } : { x: r.x - 10, y: r.y + r.height / 2 };
+        if (direction === "down") add(`left:${x - 1.5}px;top:${y}px;width:3px;height:${length}px;background:${orange}`);
+        else add(`left:${x - length}px;top:${y - 1.5}px;width:${length}px;height:3px;background:${orange}`);
+        add(`left:${x - 6}px;top:${y - 6}px;width:12px;height:12px;border-radius:50%;background:${orange};box-shadow:0 0 0 2px #fff`);
+      });
+    },
+    [rects, direction, lengths] as const,
+  );
+}
+
+/** Replaces the names in one table column with neutral names (User A, User B...), the same name for the same person. */
+export async function neutralNames(page: Page, columnHeader: string) {
+  await page.evaluate((header) => {
+    for (const table of Array.from(document.querySelectorAll("table"))) {
+      const heads = Array.from(table.querySelectorAll("thead th")).map((th) => (th as HTMLElement).innerText.trim());
+      const col = heads.findIndex((h) => h.startsWith(header));
+      if (col < 0) continue;
+      const names = new Map<string, string>();
+      for (const row of Array.from(table.querySelectorAll("tbody tr"))) {
+        const cell = row.children[col] as HTMLElement | undefined;
+        if (!cell) continue;
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const real = n.nodeValue?.trim();
+          if (!real) continue;
+          if (!names.has(real)) names.set(real, `User ${String.fromCharCode(65 + names.size)}`);
+          n.nodeValue = names.get(real)!;
+        }
+      }
+    }
+  }, columnHeader);
+}

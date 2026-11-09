@@ -10,12 +10,13 @@ export const orgSwitcher = '[data-testid="org-selector-dropdown--trigger"]';
 /** Opens the Overview page of the test organization. */
 export async function openOrgOverview(page: Page, s: Settings) {
   // Step 1: open Atlassian Administration as an org admin
-  await page.goto("https://admin.atlassian.com/");
+  // Wait for content below, not the load event (the admin page doesn't always fire it)
+  await page.goto("https://admin.atlassian.com/", { waitUntil: "commit" });
 
   // Step 2: pick the test organization if the account administers several.
   // Wait for either the organization list or an org page (isVisible() does not wait).
   const orgLink = page.getByRole("link", { name: s.test_org, exact: true });
-  await orgLink.or(page.locator(sidebar)).first().waitFor({ timeout: 30_000 }).catch(() => {});
+  await orgLink.or(page.locator(sidebar)).first().waitFor({ timeout: 60_000 }).catch(() => {});
   if (new URL(page.url()).hostname === "id.atlassian.com") throw new Blocked("Session expired: redirected to sign-in");
   if (await orgLink.isVisible()) {
     await orgLink.click();
@@ -43,4 +44,14 @@ export async function openOrgOverview(page: Page, s: Settings) {
   // Monitor cards keep loading after the first chart appears; give them time to settle
   await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
   await page.waitForTimeout(2_000);
+}
+
+/** Opens an organization page from the sidebar: a section (e.g. "AI and Rovo"), then one of its items (e.g. "Access"). */
+export async function openOrgPage(page: Page, s: Settings, section: string, item: string, title: RegExp) {
+  await openOrgOverview(page, s);
+  const nav = page.locator(sidebar);
+  await nav.getByRole("button", { name: section, exact: true }).or(nav.getByRole("link", { name: section, exact: true })).first().click();
+  await nav.getByRole("link", { name: item, exact: true }).first().click();
+  await page.locator("h1", { hasText: title }).waitFor();
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
 }

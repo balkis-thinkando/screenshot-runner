@@ -63,6 +63,8 @@ export function runRecipe(r: Recipe) {
     } catch (e) {
       verdict = e instanceof Blocked ? "blocked" : "needs_review";
       failedStep = (e as Error).message;
+      // What the page showed when the steps stopped (local test output only, never uploaded)
+      await page.screenshot({ path: info.outputPath("navigation-failed.png") }).catch(() => {});
     }
 
     if (!failedStep) {
