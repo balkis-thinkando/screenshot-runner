@@ -55,10 +55,13 @@ Verdicts:
 - steps_broken: as material, and the lesson's own text or interactive graphic (hotspots, list text) also needs
   updating, or the steps no longer lead to this screen.
 
-Changes: one short plain-text bullet per visible UI change, for example "New sidebar item Connectors, after Apps."
-or "Billing is renamed Billing and subscriptions." Cover every visible change, not only failed checks. Mark
-anything you cannot confirm from the images with "(not confirmed)". For steps_broken, end with one bullet naming
-the lesson content that must change too. Never name real people. Do not use em dashes.`;
+Changes: one short plain-text bullet per visible change in the product UI, for example "New sidebar item
+Connectors, after Apps." or "Billing is renamed Billing and subscriptions." Cover every visible UI change, not
+only failed checks. Only list changes: never mention what stayed the same, the annotations (outline, markers,
+arrows, dimming), the anonymization (organization name, avatars) or anything else under "Ignore". Mark anything
+you cannot confirm from the images with "(not confirmed)". For steps_broken, end with one bullet starting
+"Lesson content to update:" that names only content in this image's own lesson section (marked in the lesson
+text); content in other sections belongs to other screenshots. Never name real people. Do not use em dashes.`;
 
 const SCHEMA = {
   type: "object",
@@ -82,7 +85,14 @@ async function lessonContext(assetId) {
     db.from("sections").select("title, body").eq("lesson_id", recipe.lesson_id),
     db.from("lesson_screenshots").select("section, alt").eq("lesson_id", recipe.lesson_id).eq("asset_id", assetId).maybeSingle(),
   ]);
-  const lessonText = (sections ?? []).map((s) => `## ${s.title}\n${s.body}`).join("\n\n").slice(0, 12_000);
+  // Mark this image's section so the review ties lesson-text updates to the right screenshot
+  // (the image's heading is either a section title or a sub-heading inside a section's text)
+  const heading = shot?.section?.trim().toLowerCase();
+  const own = (s) => heading && (s.title.trim().toLowerCase() === heading || s.body.toLowerCase().includes(heading));
+  const lessonText = (sections ?? [])
+    .map((s) => `## ${s.title}${own(s) ? `  <-- THIS IMAGE'S SECTION (image under the heading "${shot.section}")` : ""}\n${s.body}`)
+    .join("\n\n")
+    .slice(0, 12_000);
   return { recipe, shot, lessonText };
 }
 
