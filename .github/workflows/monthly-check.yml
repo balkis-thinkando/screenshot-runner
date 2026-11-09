@@ -6,7 +6,12 @@
 # Run it by hand: Actions > Monthly screenshot check > Run workflow. Tick "update_baselines" to save
 # today's captures as the new Linux baselines (only after reviewing them; it commits to main).
 #
-# Secrets: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account).
+# After the check, scripts/ai-review.mjs has Claude compare each flagged capture with the lesson image and
+# creates a SHOT work item (label ai-reviewed) when a new screenshot is needed. Tick "ai_dry_run" to see
+# the AI verdicts without updating Supabase or creating tickets.
+#
+# Secrets: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account),
+# ANTHROPIC_API_KEY (the AI review is skipped without it).
 
 name: Monthly screenshot check
 
@@ -21,6 +26,10 @@ on:
         default: all
       update_baselines:
         description: "Save today's captures as the new baselines (commits them)"
+        type: boolean
+        default: false
+      ai_dry_run:
+        description: "AI review without updating Supabase or creating SHOT tickets"
         type: boolean
         default: false
 
@@ -96,7 +105,15 @@ jobs:
           fi
           npx playwright test $args
 
+      - name: AI review of flagged screenshots
+        if: env.UPDATE_BASELINES != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_REVIEW_DRY_RUN: ${{ inputs.ai_dry_run || false }}
+        run: node scripts/ai-review.mjs
+
       - name: Summary
+        if: always()
         run: node scripts/summary.mjs
 
       - name: Commit new baselines

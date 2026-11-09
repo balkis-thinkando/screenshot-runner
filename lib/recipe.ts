@@ -98,6 +98,13 @@ export function runRecipe(r: Recipe) {
     // A failed attempt is retried (slow loads); only record the final attempt so a run isn't stored twice
     const finalAttempt = verdict === "unchanged" || info.retry >= info.project.retries;
     if (finalAttempt) {
+      let runId: string | null = null;
+      try {
+        runId = await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch });
+      } catch (e) {
+        logVerdict({ file: r.file, title: r.title, verdict: "error", failedStep: `Could not record the run in Supabase: ${(e as Error).message}`, failed: [] });
+        throw e;
+      }
       logVerdict({
         file: r.file,
         title: r.title,
@@ -107,13 +114,12 @@ export function runRecipe(r: Recipe) {
           ...checks.results.filter((c) => c.result === "fail").map((c) => c.check),
           ...(baselineMatch === false ? ["Capture differs from the reference image (or there is none yet)"] : []),
         ],
+        // For scripts/ai-review.mjs: which recipe and run, the checks, and the local capture (never uploaded)
+        assetId: r.assetId,
+        runId,
+        checks: checks.results,
+        capturePath,
       });
-      try {
-        await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch, capturePath });
-      } catch (e) {
-        logVerdict({ file: r.file, title: r.title, verdict: "error", failedStep: `Could not record the run in Supabase: ${(e as Error).message}`, failed: [] });
-        throw e;
-      }
     }
 
     // Make the test report readable on its own
@@ -123,7 +129,17 @@ export function runRecipe(r: Recipe) {
 }
 
 /** One line per screenshot for scripts/summary.mjs (job summary and alerts). */
-function logVerdict(line: { file: string; title: string; verdict: string; failedStep: string | null; failed: string[] }) {
+function logVerdict(line: {
+  file: string;
+  title: string;
+  verdict: string;
+  failedStep: string | null;
+  failed: string[];
+  assetId?: string;
+  runId?: string | null;
+  checks?: CheckResult[];
+  capturePath?: string | null;
+}) {
   mkdirSync("results", { recursive: true });
   appendFileSync("results/verdicts.jsonl", JSON.stringify(line) + "\n");
 }
@@ -131,21 +147,26 @@ function logVerdict(line: { file: string; title: string; verdict: string; failed
 async function record(
   r: Recipe,
   s: Settings,
-  run: { verdict: string; checks: CheckResult[]; failedStep: string | null; baselineMatch: boolean | null; capturePath: string | null },
-) {
-  if (process.env.RECORD_RUNS === "false") return;
+  run: { verdict: string; checks: CheckResult[]; failedStep: string | null; baselineMatch: boolean | null },
+): Promise<string | null> {
+  if (process.env.RECORD_RUNS === "false") return null;
   const { data: recipe, error } = await db().from("screenshot_recipes").select("id").eq("asset_id", r.assetId).single();
   if (error || !recipe) throw new Error(`No screenshot_recipes row for asset ${r.assetId}`);
 
   // Captures are never stored in Supabase; they only go to the SHOT work item as an attachment
-  const { error: insErr } = await db().from("recipe_runs").insert({
-    recipe_id: recipe.id,
-    test_site: s.test_site,
-    verdict: run.verdict,
-    check_results: run.checks,
-    failed_step: run.failedStep,
-    baseline_match: run.baselineMatch,
-    run_by: "playwright",
-  });
+  const { data: inserted, error: insErr } = await db()
+    .from("recipe_runs")
+    .insert({
+      recipe_id: recipe.id,
+      test_site: s.test_site,
+      verdict: run.verdict,
+      check_results: run.checks,
+      failed_step: run.failedStep,
+      baseline_match: run.baselineMatch,
+      run_by: "playwright",
+    })
+    .select("id")
+    .single();
   if (insErr) throw insErr;
+  return inserted.id;
 }

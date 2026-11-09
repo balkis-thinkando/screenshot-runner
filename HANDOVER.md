@@ -133,6 +133,11 @@ Scheduling (5 Nov 2026): `.github/workflows/monthly-check.yml` runs one product 
 each month (`schedule.json`: day -> `Recipe.product` tag). Baselines are per OS (`baselines/{platform}/`):
 run the workflow by hand once with update_baselines ticked to create the Linux ones. The job fails
 (GitHub emails the owner) only when a screenshot is blocked or nothing ran (`scripts/summary.mjs`).
+AI review (9 Nov 2026): `scripts/ai-review.mjs` runs after the check in CI. For each needs_review capture,
+claude-opus-5-5 (effort medium, server-side fallbacks) compares the lesson image with the capture and returns
+verdict + changes (structured output); the run in `recipe_runs` is updated, and material/steps_broken create a
+SHOT ticket via `create-shot-ticket` with label `ai-reviewed`. Secret ANTHROPIC_API_KEY; MAX_REVIEWS caps cost;
+manual runs can tick ai_dry_run.
 
 Status: **type-checks and lists, but has never been run against Atlassian** (the previous environment
 could not reach Atlassian). First job is to run it for real (section 7, task 1).

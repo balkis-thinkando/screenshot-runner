@@ -10,6 +10,7 @@
 //                             lesson text or labelled graphic that needs updating too)
 //   screenshot      required  PNG file (the new capture), except with issue_key
 //   issue_key       optional  rewrite the description of this existing ticket instead of creating one
+//   ai_reviewed     optional  "true": the verdict came from the AI review; adds the ai-reviewed label
 //   dry_run         optional  "true": validate everything and return the payload, change nothing
 // Auth: service role key as Bearer, or a one-time token from public.mint_shot_ticket_token()
 // in the x-shot-token header (any valid project key as Bearer).
@@ -81,6 +82,7 @@ Deno.serve(async (req) => {
     const changes = String(form.get("changes") ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
     const issueKey = String(form.get("issue_key") ?? "").trim();
     const dryRun = form.get("dry_run") === "true";
+    const aiReviewed = form.get("ai_reviewed") === "true";
     const file = form.get("screenshot");
     if (!assetId) return Response.json({ error: "asset_id is required" }, { status: 400 });
     if (!VERDICTS.includes(verdict)) return Response.json({ error: `verdict must be ${VERDICTS.join(" or ")}` }, { status: 400 });
@@ -157,7 +159,7 @@ Deno.serve(async (req) => {
       project: { key: PROJECT },
       issuetype: { name: ISSUE_TYPE },
       summary: `${alcat.alcat_key} ${image}: update screenshot (${lesson?.title ?? "lesson"})`.slice(0, 250),
-      labels: ["screenshot-runner", label, verdict.replace("_", "-")],
+      labels: ["screenshot-runner", label, verdict.replace("_", "-"), ...(aiReviewed ? ["ai-reviewed"] : [])],
       [LEARNING_CONTENT]: [{ workspaceId: WORKSPACE_ID, id: `${WORKSPACE_ID}:${alcat.alcat_object_id}`, objectId: String(alcat.alcat_object_id) }],
       description,
     };
