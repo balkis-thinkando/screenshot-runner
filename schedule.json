@@ -2,6 +2,7 @@
   "_comment": "Monthly check, one product per day. Keys are days of the month (1-7, the first week); values are recipe product tags (Recipe.product). Days with no entry are skipped.",
   "days": {
     "1": "admin",
-    "2": "confluence"
+    "2": "confluence",
+    "3": "jira"
   }
 }

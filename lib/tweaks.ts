@@ -35,7 +35,10 @@ export async function anonymize(page: Page, initials = "AU") {
       }
     });
     // Profile pictures: Atlassian serves them from .../avatar, .../aa-avatar or gravatar
+    // ...but not work type or space icons, which Jira also serves from .../universal_avatar/view/type/...
+    const icon = /\/view\/type\/(issuetype|project)|issuetype/i;
     document.querySelectorAll<HTMLImageElement>('img[src*="avatar"]').forEach((img) => {
+      if (icon.test(img.getAttribute("src") ?? "")) return;
       const { width, height } = img.getBoundingClientRect();
       const span = document.createElement("span");
       span.textContent = initials;
@@ -124,21 +127,75 @@ export async function spotlight(
   );
 }
 
-/** Lesson-style pointer: a white curved arrow coming up from below-left to the left edge of the target. */
-export async function arrowTo(page: Page, target: Locator) {
+/**
+ * Lesson-style pointer: a white curved arrow ending at the left edge of the target, coming from below-left
+ * (default) or curling down from above. `offsetY` sets where on the target it points (default: middle).
+ */
+export async function arrowTo(page: Page, target: Locator, opts: { from?: "below" | "above"; offsetY?: number } = {}) {
   const r = await target.boundingBox();
   if (!r) throw new Error("arrowTo: target is not visible");
-  await page.evaluate((r) => {
-    const end = { x: r.x - 6, y: r.y + r.height / 2 };
-    const start = { x: end.x - 120, y: end.y + 150 };
+  await page.evaluate(([r, from, offsetY]) => {
+    const end = { x: r.x - 6, y: r.y + (offsetY ?? r.height / 2) };
+    const curve =
+      from === "above"
+        ? (() => {
+            const start = { x: end.x + 4, y: end.y - 75 };
+            return `M${start.x},${start.y} C${start.x - 45},${start.y + 10} ${end.x - 45},${end.y} ${end.x},${end.y}`;
+          })()
+        : (() => {
+            const start = { x: end.x - 120, y: end.y + 150 };
+            return `M${start.x},${start.y} C${start.x - 10},${end.y + 30} ${end.x - 70},${end.y} ${end.x},${end.y}`;
+          })();
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("data-screenshot-tweak", "arrow");
     svg.setAttribute("style", "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647");
     svg.innerHTML =
       `<defs><marker id="st-head" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto">` +
       `<path d="M0,0 L8,5 L0,10 Z" fill="#fff"/></marker></defs>` +
-      `<path d="M${start.x},${start.y} C${start.x - 10},${end.y + 30} ${end.x - 70},${end.y} ${end.x},${end.y}" ` +
-      `fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" marker-end="url(#st-head)"/>`;
+      `<path d="${curve}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" marker-end="url(#st-head)"/>`;
     document.body.appendChild(svg);
-  }, r);
+  }, [r, opts.from ?? "below", opts.offsetY ?? null] as const);
+}
+
+/**
+ * Lesson-style annotation with several highlighted areas: dims the page except each area and outlines each
+ * one in orange (the single-area spotlight() can't leave more than one hole in the overlay).
+ * An area can be several locators; it then covers all of them.
+ */
+export async function spotlightAreas(page: Page, areas: (Locator | Locator[])[]) {
+  // An area given as several locators covers all of them
+  const rects = [];
+  for (const area of areas) {
+    const parts = [];
+    for (const l of Array.isArray(area) ? area : [area]) {
+      const r = await l.boundingBox();
+      if (!r) throw new Error("spotlightAreas: an area is not visible");
+      parts.push(r);
+    }
+    const x = Math.min(...parts.map((r) => r.x));
+    const y = Math.min(...parts.map((r) => r.y));
+    rects.push({
+      x,
+      y,
+      width: Math.max(...parts.map((r) => r.x + r.width)) - x,
+      height: Math.max(...parts.map((r) => r.y + r.height)) - y,
+    });
+  }
+  await page.evaluate((rects) => {
+    const pad = 4;
+    const radius = 12;
+    const boxes = rects.map((r) => ({ x: r.x - pad, y: r.y - pad, w: r.width + pad * 2, h: r.height + pad * 2 }));
+    const round = (b: { x: number; y: number; w: number; h: number }) =>
+      `M${b.x + radius},${b.y} h${b.w - 2 * radius} a${radius},${radius} 0 0 1 ${radius},${radius} v${b.h - 2 * radius} ` +
+      `a${radius},${radius} 0 0 1 -${radius},${radius} h-${b.w - 2 * radius} a${radius},${radius} 0 0 1 -${radius},-${radius} ` +
+      `v-${b.h - 2 * radius} a${radius},${radius} 0 0 1 ${radius},-${radius} Z`;
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("data-screenshot-tweak", "spotlight");
+    svg.setAttribute("style", "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483646");
+    // Even-odd fill: the page-sized rectangle minus each area
+    svg.innerHTML =
+      `<path fill-rule="evenodd" fill="rgba(0,0,0,.5)" d="M0,0 H${innerWidth} V${innerHeight} H0 Z ${boxes.map(round).join(" ")}"/>` +
+      boxes.map((b) => `<path d="${round(b)}" fill="none" stroke="#FCA700" stroke-width="3"/>`).join("");
+    document.body.appendChild(svg);
+  }, rects);
 }
