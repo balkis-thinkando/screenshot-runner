@@ -18,7 +18,8 @@ export async function openSignedIn(page: Page, s: Settings, path: string) {
 /** All work (work item search) with a JQL query, shown in the JQL view. */
 export async function openJqlSearch(page: Page, s: Settings, jql: string) {
   await openSignedIn(page, s, `/issues/?jql=${encodeURIComponent(jql)}`);
-  const count = page.getByText(/^\d+ of \d+$/);
+  // Wait for the result count or a JQL error (text matches can hit hidden copies, so use the count's own element)
+  const count = page.locator('[data-testid="issue-navigator.ui.issue-results.list-view.issue-count.text"]');
   const error = page.getByText(/JQL error|does not exist/);
   await count.or(error).first().waitFor({ timeout: 60_000 });
   if (await error.first().isVisible()) throw new Error(`Search failed: ${(await error.first().innerText()).slice(0, 200)}`);

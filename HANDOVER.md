@@ -142,7 +142,7 @@ manual runs can tick ai_dry_run.
 Status: **type-checks and lists, but has never been run against Atlassian** (the previous environment
 could not reach Atlassian). First job is to run it for real (section 7, task 1).
 
-Config: viewport **1321×853** (lesson image size), light mode, en-US, UTC, workers 3, retries 1.
+Config: viewport **1280×800** (page area of the lesson images; framed with scripts/frame.mjs it comes out at the lesson size 1322×892), light mode, en-US, UTC, workers 3, retries 1.
 Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `RECORD_RUNS=false` for dry runs.
 
 Run flow and verdict logic (`lib/recipe.ts`):

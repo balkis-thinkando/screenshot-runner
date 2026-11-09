@@ -52,7 +52,7 @@ runRecipe({
     });
 
     await c.check("Results: 2 work items, both with Employee Alana Grant", async () => {
-      const count = (await page.getByText(/^\d+ of \d+$/).first().innerText()).trim();
+      const count = (await page.locator('[data-testid="issue-navigator.ui.issue-results.list-view.issue-count.text"]').innerText()).trim();
       const rows = await page.locator(`${results} tbody tr`).count();
       const alana = await page.locator(results).getByText("Alana Grant").count();
       const pass = count === "2 of 2" && alana === 2;

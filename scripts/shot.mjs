@@ -3,12 +3,15 @@
 // Auth: SUPABASE_SERVICE_ROLE_KEY, or SHOT_TOKEN (from select public.mint_shot_ticket_token()) with
 // SUPABASE_ANON_KEY. SUPABASE_URL is required.
 
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { brand } from "./frame.mjs";
 
 /**
  * @param {{ assetId: string, verdict: string, changes: string[] | string, png?: string, issue?: string,
- *           aiReviewed?: boolean, dryRun?: boolean }} t
+ *           aiReviewed?: boolean, dryRun?: boolean, raw?: boolean }} t
+ * The capture is framed like the lesson images before it is attached, unless raw is true.
  * @returns {Promise<{ ok: boolean, body: any }>}
  */
 export async function sendToShot(t) {
@@ -28,8 +31,14 @@ export async function sendToShot(t) {
   if (t.issue) form.append("issue_key", t.issue);
   if (t.aiReviewed) form.append("ai_reviewed", "true");
   if (t.dryRun) form.append("dry_run", "true");
-  if (t.png) form.append("screenshot", new Blob([readFileSync(t.png)], { type: "image/png" }), basename(t.png));
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/create-shot-ticket`, { method: "POST", headers, body: form });
-  return { ok: res.ok, body: await res.json() };
+  // Framed copy in the temp folder, removed once sent
+  const framed = t.png && !t.raw ? join(tmpdir(), `framed-${process.pid}-${basename(t.png)}`) : null;
+  try {
+    if (framed) await brand(t.png, framed);
+    if (t.png) form.append("screenshot", new Blob([readFileSync(framed ?? t.png)], { type: "image/png" }), basename(t.png));
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/create-shot-ticket`, { method: "POST", headers, body: form });
+    return { ok: res.ok, body: await res.json() };
+  } finally {
+    if (framed) rmSync(framed, { force: true });
+  }
 }

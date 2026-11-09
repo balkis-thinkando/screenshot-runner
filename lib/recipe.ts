@@ -1,6 +1,7 @@
 import { test, expect, Page, Locator } from "@playwright/test";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { db, settings, Settings } from "./supabase";
+import { hideFloatingButtons } from "./tweaks";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
 
@@ -66,6 +67,7 @@ export function runRecipe(r: Recipe) {
 
     if (!failedStep) {
       try {
+        await hideFloatingButtons(page);
         await r.tweak(page, s);
         await r.checks(page, checks, s);
         // Capture for the ticket / AI review

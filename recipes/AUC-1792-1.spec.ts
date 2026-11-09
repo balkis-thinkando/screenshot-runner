@@ -24,7 +24,7 @@ runRecipe({
   },
 
   // The lesson image shows only the top of the page
-  clip: { x: 0, y: 0, width: 1321, height: 470 },
+  clip: { x: 0, y: 0, width: 1280, height: 470 },
 
   // Recent pages and the feed depend on the account's activity
   mask: (page) => [page.locator(mainContent)],

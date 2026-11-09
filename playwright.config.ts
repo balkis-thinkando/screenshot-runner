@@ -9,8 +9,8 @@ export default defineConfig({
   // Baselines = the last approved capture of each screenshot, kept in the repo
   snapshotPathTemplate: "baselines/{platform}/{arg}{ext}",
   use: {
-    // Same size as the lesson images, so captures and baselines line up
-    viewport: { width: 1321, height: 853 },
+    // The page area of the lesson images: framed, they come out at the lesson size (1322x892)
+    viewport: { width: 1280, height: 800 },
     colorScheme: "light",
     locale: "en-US",
     timezoneId: "UTC",

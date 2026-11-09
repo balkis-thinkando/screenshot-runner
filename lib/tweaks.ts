@@ -50,6 +50,18 @@ export async function anonymize(page: Page, initials = "AU") {
   }, initials);
 }
 
+/** Hides small floating buttons pinned to the bottom-right corner (e.g. the Rovo button); lessons don't show them. */
+export async function hideFloatingButtons(page: Page) {
+  await page.evaluate(() => {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+      if (getComputedStyle(el).position !== "fixed" || el.closest("[data-screenshot-tweak]")) continue;
+      const r = el.getBoundingClientRect();
+      const small = r.width > 0 && r.width < 120 && r.height < 120;
+      if (small && r.right > innerWidth - 120 && r.bottom > innerHeight - 120) el.style.visibility = "hidden";
+    }
+  });
+}
+
 /** Hides banners, onboarding messages or pop-ups that start with any of the given texts. */
 export async function hideMessages(page: Page, startsWith: string[]) {
   await page.evaluate((starts) => {
