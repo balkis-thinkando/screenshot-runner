@@ -5,7 +5,7 @@
 // Recipe:  public.screenshot_recipes where asset_id = 'ttrpillql6np016tgq85w770w0p170kn'
 
 import { runRecipe } from "../lib/recipe";
-import { adminButton, mainContent, openConfluenceHome } from "../lib/confluence";
+import { adminButton, mainContent } from "../lib/confluence";
 import { anonymize, arrowTo, hideMessages, spotlight } from "../lib/tweaks";
 
 runRecipe({
@@ -14,7 +14,12 @@ runRecipe({
   title: "AUC-1792 #1 — Confluence administration icon",
   product: "confluence",
 
-  navigate: openConfluenceHome,
+  // DELIBERATE BREAK (AI repair test, never merge): the UI has no "Home" link any more
+  async navigate(page, s) {
+    await page.goto(`${s.test_site}/wiki/spaces`, { waitUntil: "commit" });
+    await page.getByRole("link", { name: "Home", exact: true }).first().click({ timeout: 20_000 });
+    await adminButton(page).waitFor({ timeout: 20_000 });
+  },
 
   async tweak(page) {
     await hideMessages(page, ["Your site now has roles"]);
