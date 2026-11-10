@@ -84,7 +84,7 @@ in Claude Code sessions with the owner.
   `steps_changed`, PR on branch `ai-repair/<file>-<run id>`. `ai_dry_run` covers all of it (diff in the
   job summary). `AI_REPAIR_FIXTURE` replays canned answers for local tests (no API key, nothing written).
 - Edge Function source updated (label `ai-repaired`, line "The steps to reach this screen have changed:
-  ..."); needs redeploy (v6). Until then those fields are ignored.
+  ..."); deployed as v6 on 10 Nov 2026 (dry-run call checked labels and description).
 - Repo setting needed for PRs: Actions > General > "Allow GitHub Actions to create and approve pull requests".
 - Tested 10 Nov locally: AUC-1792-1 broken on purpose (clicks a missing "Home" link); fixture attempts:
   still wrong (retried with new snapshot), rule breaking (rejected), correct (reached the screen, verdict
