@@ -9,7 +9,9 @@
 //   changes         required  UI changes vs the lesson image, plain text, one per line (include any
 //                             lesson text or labelled graphic that needs updating too)
 //   screenshot      required  PNG file (the new capture), except with issue_key
+//   comparison      optional  PNG: side-by-side of the current lesson image and the new capture, attached too
 //   issue_key       optional  rewrite the description of this existing ticket instead of creating one
+//   attach_only     optional  "true" with issue_key: only add the image(s) to that ticket
 //   ai_reviewed     optional  "true": the verdict came from the AI review; adds the ai-reviewed label
 //   dry_run         optional  "true": validate everything and return the payload, change nothing
 // Auth: service role key as Bearer, or a one-time token from public.mint_shot_ticket_token()
@@ -83,16 +85,23 @@ Deno.serve(async (req) => {
     const issueKey = String(form.get("issue_key") ?? "").trim();
     const dryRun = form.get("dry_run") === "true";
     const aiReviewed = form.get("ai_reviewed") === "true";
+    const attachOnly = form.get("attach_only") === "true";
     const file = form.get("screenshot");
+    const comparisonFile = form.get("comparison");
     if (!assetId) return Response.json({ error: "asset_id is required" }, { status: 400 });
-    if (!VERDICTS.includes(verdict)) return Response.json({ error: `verdict must be ${VERDICTS.join(" or ")}` }, { status: 400 });
-    if (!changes.length) return Response.json({ error: "changes is required" }, { status: 400 });
+    if (!attachOnly && !VERDICTS.includes(verdict)) return Response.json({ error: `verdict must be ${VERDICTS.join(" or ")}` }, { status: 400 });
+    if (!attachOnly && !changes.length) return Response.json({ error: "changes is required" }, { status: 400 });
     let png: Uint8Array | null = null;
     if (file instanceof File) {
       png = new Uint8Array(await file.arrayBuffer());
       if (png[0] !== 0x89 || png[1] !== 0x50) return Response.json({ error: "screenshot must be a PNG" }, { status: 400 });
-    } else if (!issueKey) {
+    } else if (!issueKey || attachOnly) {
       return Response.json({ error: "screenshot file is required" }, { status: 400 });
+    }
+    let comparison: Uint8Array | null = null;
+    if (comparisonFile instanceof File) {
+      comparison = new Uint8Array(await comparisonFile.arrayBuffer());
+      if (comparison[0] !== 0x89 || comparison[1] !== 0x50) return Response.json({ error: "comparison must be a PNG" }, { status: 400 });
     }
 
     // Lesson context from Supabase
@@ -124,11 +133,24 @@ Deno.serve(async (req) => {
       ],
     };
 
-    // Rewrite the description of an existing ticket for this screenshot
+    // Attach the new capture (and the side-by-side, when given) to a ticket
+    const attach = async (key: string) => {
+      const upload = new FormData();
+      upload.append("file", new Blob([png!], { type: "image/png" }), `${alcat.alcat_key}-${image.replace(" ", "-")}-new.png`);
+      if (comparison) upload.append("file", new Blob([comparison], { type: "image/png" }), `${alcat.alcat_key}-${image.replace(" ", "-")}-comparison.png`);
+      await jira(`/rest/api/3/issue/${key}/attachments`, { method: "POST", headers: { "X-Atlassian-Token": "no-check" }, body: upload });
+    };
+
+    // Existing ticket for this screenshot: rewrite its description, or only add images
     if (issueKey) {
       const issue = await jira(`/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=labels`);
       if (!issue.fields.labels?.includes(label)) {
         return Response.json({ error: `${issueKey} is not the ticket for asset ${assetId}` }, { status: 409 });
+      }
+      if (attachOnly) {
+        if (dryRun) return Response.json({ status: "dry_run", key: issueKey, files: comparison ? 2 : 1 });
+        await attach(issueKey);
+        return Response.json({ status: "attached", key: issueKey, url: `${JIRA}/browse/${issueKey}`, files: comparison ? 2 : 1 });
       }
       if (dryRun) return Response.json({ status: "dry_run", key: issueKey, description });
       await jira(`/rest/api/3/issue/${encodeURIComponent(issueKey)}`, {
@@ -181,12 +203,10 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ fields }),
     });
 
-    const upload = new FormData();
-    upload.append("file", new Blob([png!], { type: "image/png" }), `${alcat.alcat_key}-${image.replace(" ", "-")}-new.png`);
     let attached = true;
     let attachError: string | null = null;
     try {
-      await jira(`/rest/api/3/issue/${created.key}/attachments`, { method: "POST", headers: { "X-Atlassian-Token": "no-check" }, body: upload });
+      await attach(created.key);
     } catch (e) {
       attached = false;
       attachError = String(e);

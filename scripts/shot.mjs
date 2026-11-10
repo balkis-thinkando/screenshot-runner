@@ -6,12 +6,15 @@
 import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { sideBySide } from "./compare.mjs";
 import { brand } from "./frame.mjs";
 
 /**
  * @param {{ assetId: string, verdict: string, changes: string[] | string, png?: string, issue?: string,
- *           aiReviewed?: boolean, dryRun?: boolean, raw?: boolean }} t
- * The capture is framed like the lesson images before it is attached, unless raw is true.
+ *           aiReviewed?: boolean, dryRun?: boolean, raw?: boolean, lessonImage?: string, attachOnly?: boolean }} t
+ * The capture is framed like the lesson images before it is attached, unless raw is true. With lessonImage
+ * (URL of the current lesson image), a side-by-side comparison is attached too. With issue and attachOnly,
+ * the images are added to that ticket and its description is left alone.
  * @returns {Promise<{ ok: boolean, body: any }>}
  */
 export async function sendToShot(t) {
@@ -29,16 +32,22 @@ export async function sendToShot(t) {
   form.append("verdict", t.verdict);
   form.append("changes", Array.isArray(t.changes) ? t.changes.join("\n") : t.changes);
   if (t.issue) form.append("issue_key", t.issue);
+  if (t.attachOnly) form.append("attach_only", "true");
   if (t.aiReviewed) form.append("ai_reviewed", "true");
   if (t.dryRun) form.append("dry_run", "true");
-  // Framed copy in the temp folder, removed once sent
-  const framed = t.png && !t.raw ? join(tmpdir(), `framed-${process.pid}-${basename(t.png)}`) : null;
+
+  // Framed copy and comparison in the temp folder, removed once sent
+  const stem = join(tmpdir(), `shot-${process.pid}-${basename(t.png ?? "capture.png", ".png")}`);
+  const framed = t.png && !t.raw ? `${stem}-framed.png` : null;
+  const comparison = t.png && t.lessonImage ? `${stem}-comparison.png` : null;
   try {
     if (framed) await brand(t.png, framed);
+    if (comparison) await sideBySide(t.lessonImage, framed ?? t.png, comparison);
     if (t.png) form.append("screenshot", new Blob([readFileSync(framed ?? t.png)], { type: "image/png" }), basename(t.png));
+    if (comparison) form.append("comparison", new Blob([readFileSync(comparison)], { type: "image/png" }), "comparison.png");
     const res = await fetch(`${SUPABASE_URL}/functions/v1/create-shot-ticket`, { method: "POST", headers, body: form });
     return { ok: res.ok, body: await res.json() };
   } finally {
-    if (framed) rmSync(framed, { force: true });
+    for (const f of [framed, comparison]) if (f) rmSync(f, { force: true });
   }
 }

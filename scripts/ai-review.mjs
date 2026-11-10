@@ -141,7 +141,7 @@ async function review(row) {
   if (response.stop_reason === "refusal") throw new Error(`Review declined (${response.stop_details?.category ?? "no category"})`);
   const text = response.content.find((b) => b.type === "text")?.text;
   if (!text) throw new Error(`No answer (stop reason ${response.stop_reason})`);
-  return JSON.parse(text);
+  return { ...JSON.parse(text), lessonImage: recipe.image_url };
 }
 
 const cell = (t) => String(t ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").slice(0, 300);
@@ -166,7 +166,7 @@ for (const row of flagged.slice(0, maxReviews)) {
       if (dryRun) {
         ticket = "(dry run)";
       } else {
-        const { ok, body } = await sendToShot({ assetId: row.assetId, verdict, changes: result.changes, png: row.capturePath, aiReviewed: true });
+        const { ok, body } = await sendToShot({ assetId: row.assetId, verdict, changes: result.changes, png: row.capturePath, lessonImage: result.lessonImage, aiReviewed: true });
         if (!ok) throw new Error(`Ticket not created: ${body.error ?? JSON.stringify(body)}`);
         ticket = body.status === "duplicate" ? `${body.key} (already open)` : body.key;
       }
