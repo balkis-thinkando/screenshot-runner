@@ -7,6 +7,84 @@ anything. Everything listed under "What exists" is live.
 
 ---
 
+## 0. Status on 10 Nov 2026 (read this first; it overrides older details below)
+
+Sections 1 to 8 are the original 5 Nov handover. This section records what was built and decided since,
+in Claude Code sessions with the owner.
+
+### What works end to end
+- Repo on GitHub: `balkis-thinkando/screenshot-runner` (private). Owner approves pushes to `main`.
+- Monthly workflow `.github/workflows/monthly-check.yml`: days 1 to 7 at 06:00 UTC, one product per day
+  (`schedule.json`: 1 admin, 2 confluence, 3 jira). Manual runs: inputs product (admin/confluence/jira/all),
+  update_baselines, ai_dry_run. Retries 1, workers 3.
+- AI review in CI (`scripts/ai-review.mjs`): claude-opus-5-5, effort medium, structured output, server-side
+  fallbacks "default"; compares lesson image vs capture; verdict + list of every visible UI change; updates
+  `recipe_runs`; material/steps_broken create a SHOT ticket. MAX_REVIEWS=25.
+- SHOT tickets via Supabase Edge Function `create-shot-ticket` (v5): description template (below), Learning
+  Content set, labels `screenshot-runner`, `asset-<id>`, verdict, `ai-reviewed`; attachments: branded new
+  capture + side-by-side comparison (`scripts/compare.mjs`); dedupe on open tickets per asset; `issue_key`
+  rewrites a description; `attach_only` adds images. Callers: `scripts/shot.mjs` (shared),
+  `scripts/create-shot-ticket.mjs` (by hand, one-time token from `select public.mint_shot_ticket_token()`).
+  The function source lives in the repo but is deployed separately to Supabase (redeploy after edits).
+- Branding: `scripts/frame.mjs` (Screenshotter's frame.js + `brand()`, pad 20) turns a 1280x800 capture into
+  1322x892, identical to lesson images. Viewport is 1280x800 (the page area inside the lesson frame).
+- Secrets on GitHub: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (dedicated test account session),
+  ANTHROPIC_API_KEY. SUPABASE_URL is hard-coded in the workflow.
+
+### Owner decisions
+- SHOT ticket description template (exact): "The product UI has changed, so this lesson screenshot needs
+  replacing in Contentful. The new capture is attached." / "Lesson URL: <url>" / heading "What changed" /
+  bullet list of every visible change (not just failed checks), plus one "Lesson content to update" bullet
+  for steps_broken. Concise, no em dashes, no real names.
+- Captures are never stored (no Supabase bucket; `recipe-captures` was deleted). Exception: approved
+  reference images in `baselines/{platform}/` in the private repo, for comparison only.
+- Screenshots never show real people: names become User A/B (`neutralNames`), avatars initials
+  (`anonymize`, which keeps work type icons), org shown as Apex (`renameOrg`).
+- AI is used only for exceptions; routine runs are deterministic. Script repairs must go through a pull
+  request a person merges.
+
+### Screenshots set up (8, plus 1 diagram marked not_applicable)
+| Recipe | Lesson / image | Notes |
+|---|---|---|
+| AUC-330-2, AUC-330-3 | Administer an Atlassian organization | SHOT-1 open for #3 (steps_broken) |
+| AUC-1792-1..3 | Navigate Confluence administration | Cosmetic only; #1 test data: account has no recent pages |
+| AUC-994-3 | Find your assets with AQL | Needs test data below |
+| AUC-16081-1 | Use Rovo across your organization | Page replaced by AI and Rovo > Access; expect steps_broken |
+| AUC-1835-1 | Manage global automation settings | More actions menu open; owners neutralized |
+
+### Test site (learning-vkpy) and test account
+- Dedicated test account: org admin, Jira admin, JSM agent licence (needed to edit work items), Assets access.
+- Jira pages must be opened through `https://id.atlassian.com/login?continue=...` (`lib/jira.ts`
+  `openSignedIn`): anonymous-viewable pages (All work) otherwise browse signed out.
+- Navigation waits for page content, not the load event (`waitUntil: "commit"`); admin.atlassian.com may
+  never fire load. Pages are slow at times; retries absorb it.
+- Test data created for AUC-994-3 (9 Nov 2026): Assets object A_PEOP-3 renamed "Alana Grant"; ITS
+  Incidents ITS-6258 "My laptop is not turning on" (Completed) and ITS-6259 "Keyboard is broken" (Work in
+  progress), Employee = Alana Grant; test account All work columns Work, Status, Employee, Priority. The
+  owner fixed the Employee Assets field configuration.
+
+### Costs agreed with the owner (also on the Confluence page "Screenshots scanning tool")
+- One-time setup for about 450 UI screenshots: written recipes about $30; scripts about $1 to $3 each
+  ($450 to $1,350); total about $500 to $1,400 via API, or Team-seat limits over several weeks.
+- Monthly running: about $5 (at most about $25).
+
+### Next task: AI script repair (agreed design, not built)
+When a script cannot reach its screen (navigation error, no capture):
+1. Mark it clearly and fail the run so the owner is emailed (today it only shows as needs_review).
+2. AI repair step in CI: Claude gets recipe, script, failed step, page snapshot (accessibility tree +
+   screenshot); writes a corrected script; tests it on the live site (max 3 attempts per script, max 5
+   repairs per run).
+3. If it works: capture with the repaired script, AI review as usual (a changed path also counts as a
+   change, usually steps_broken), SHOT ticket with label `ai-repaired` and a line that the steps changed.
+4. Open a pull request with the script fix (workflow needs contents: write and pull-requests: write).
+   Never merge automatically.
+5. Test by breaking a script on purpose.
+Other open items: let runs sign in by themselves (password secrets) so the session cannot expire; treat
+failed "Test data:" checks as blocked; regenerate Linux baselines (`product all`, update_baselines) after
+the 10 Nov viewport change; sorting pass and a one-product pilot for bulk recipes.
+
+---
+
 ## 1. Goal
 
 Keep screenshots in Atlassian University on-demand lessons up to date, with as little human and AI
