@@ -73,6 +73,15 @@ runRecipe({
       main.scrollTop += el.getBoundingClientRect().top - 70;
     });
     await page.waitForTimeout(500);
+    // The end of the Global templates section (its empty-state text on a site without templates) peeks out
+    // above the heading; the lesson shows nothing there
+    const top = (await section(page, "Global blueprints").boundingBox())!.y;
+    await page.locator("#AkMainContent").evaluate((main, top) => {
+      for (const el of Array.from(main.querySelectorAll<HTMLElement>("p, span, div"))) {
+        const r = el.getBoundingClientRect();
+        if (!el.children.length && el.innerText?.trim() && r.bottom > 0 && r.bottom < top - 4) el.style.visibility = "hidden";
+      }
+    }, top);
     // Outline the selected sidebar item and the Global blueprints section down to the bottom of the window
     const h = (await section(page, "Global blueprints").boundingBox())!;
     const t = (await blueprintsTable(page).boundingBox())!;

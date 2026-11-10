@@ -16,6 +16,10 @@ const overviewCard = (page: Page) => page.locator("h2", { hasText: "Overview" })
 const metricSelects = (page: Page) => page.getByRole("combobox", { name: "Select metric to display in Overview section" });
 const metricMenu = (page: Page) => page.getByRole("listbox");
 
+// The lesson image shows the dropdowns closed: the menu is opened in navigate() to read its groups and
+// options for the checks, then closed before the capture
+const menu = { groups: [] as string[], options: [] as string[] };
+
 /** Replaces the names of the people on Mission control (Confluence admins card) with User A, User B... */
 async function neutralPeople(page: Page) {
   await page.evaluate(() => {
@@ -55,6 +59,11 @@ runRecipe({
     // Open the first metric dropdown (the input itself is not clickable; its select control is)
     await metricSelects(page).first().locator("xpath=ancestor::div[2]").click();
     await metricMenu(page).waitFor();
+    menu.groups = (await page.locator('[id^="react-select-"][id$="-heading"]').allInnerTexts()).map((t) => t.trim().toLowerCase());
+    menu.options = (await page.getByRole("option").allInnerTexts()).map((t) => t.trim());
+    await page.keyboard.press("Escape");
+    await metricMenu(page).waitFor({ state: "hidden" });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // no focus ring, as in the lesson
   },
 
   async tweak(page, s) {
@@ -62,11 +71,13 @@ runRecipe({
     await neutralPeople(page);
     await anonymize(page);
     await renameOrg(page, s.test_org, s.display_org_name);
-    // Opening the dropdown scrolls the page about 80px so the whole menu fits (it cannot be scrolled back
-    // while the menu is open): the page title is just above the capture, the rest matches the lesson
+    // Opening the menu scrolls the content panel (smoothly, so it keeps moving for a moment after the menu
+    // closes); once it has settled, back to the top so the page title shows, as in the lesson
+    await page.waitForTimeout(1_500);
+    await page.locator("#AkMainContent").evaluate((m) => m.scrollTo({ top: 0, behavior: "instant" }));
     await page.waitForTimeout(700);
-    // Two outlined areas: Mission control in the sidebar, and the Overview card with the open dropdown
-    await spotlightAreas(page, [missionControlLink(page), [overviewCard(page), metricMenu(page)]]);
+    // Two outlined areas: Mission control in the sidebar, and the Overview card in edit mode
+    await spotlightAreas(page, [missionControlLink(page), overviewCard(page)]);
   },
 
   // The banner and the metric numbers change over time
@@ -94,14 +105,14 @@ runRecipe({
     });
 
     await c.check("Metric dropdown groups: Activity, Content management, Feature usage, Security", async () => {
-      const groups = (await page.locator('[id^="react-select-"][id$="-heading"]').allInnerTexts()).map((t) => t.trim().toLowerCase());
+      const groups = menu.groups;
       const expected = ["activity", "content management", "feature usage", "security"];
       const pass = JSON.stringify(groups) === JSON.stringify(expected);
       return { pass, detail: pass ? "Same groups, same order" : `Now: ${groups.join(", ") || "no group headings"}` };
     });
 
     await c.check("Security metrics in the dropdown include Active public links and Public link views", async () => {
-      const options = (await page.getByRole("option").allInnerTexts()).map((t) => t.trim());
+      const options = menu.options;
       const missing = ["Active public links", "Public link views"].filter((o) => !options.includes(o));
       return { pass: !missing.length, detail: missing.length ? `Missing: ${missing.join(", ")}. Options: ${options.join(", ")}` : `${options.length} options, both present` };
     });
