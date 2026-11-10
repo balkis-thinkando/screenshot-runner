@@ -88,7 +88,12 @@ in Claude Code sessions with the owner.
 - Repo setting needed for PRs: Actions > General > "Allow GitHub Actions to create and approve pull requests".
 - Tested 10 Nov locally: AUC-1792-1 broken on purpose (clicks a missing "Home" link); fixture attempts:
   still wrong (retried with new snapshot), rule breaking (rejected), correct (reached the screen, verdict
-  steps_broken). Not yet tested with the real Claude call in CI.
+  steps_broken). CI dry run 10 Nov (run 42800219366, branch `ai-repair-break-test`, product confluence):
+  real Claude fixed it on attempt 1 (back to openConfluenceHome; steps unchanged; AI review cosmetic, so
+  no ticket); job failed as designed. `ai-repair-break-test` is test only: delete it, never merge.
+- Known bug (on main too): a recipe with no baseline is not retried by Playwright, and lib/recipe.ts only
+  logs the final retry, so its result is dropped (AUC-1792-2/-3 on Linux in that run). Fix: also log
+  when the baseline is missing; regenerate Linux baselines.
 
 Other open items: let runs sign in by themselves (password secrets) so the session cannot expire; treat
 failed "Test data:" checks as blocked; regenerate Linux baselines (`product all`, update_baselines) after
