@@ -1,7 +1,8 @@
 # Monthly screenshot check: one product per day during the first week of each month
 # (schedule.json maps day of month -> product tag). Results go to Supabase (recipe_runs) and the
 # job summary. The job fails, and GitHub emails you, when a screenshot is blocked (usually an
-# expired sign-in) or nothing ran. needs_review results do not fail the job.
+# expired sign-in), a script could not reach its screen, or nothing ran. Other needs_review results
+# do not fail the job.
 #
 # Run it by hand: Actions > Monthly screenshot check > Run workflow. Tick "update_baselines" to save
 # today's captures as the new Linux baselines (only after reviewing them; it commits to main).
@@ -9,6 +10,13 @@
 # After the check, scripts/ai-review.mjs has Claude compare each flagged capture with the lesson image and
 # creates a SHOT work item (label ai-reviewed) when a new screenshot is needed. Tick "ai_dry_run" to see
 # the AI verdicts without updating Supabase or creating tickets.
+#
+# When a script cannot reach its screen, scripts/ai-repair.mjs has Claude fix the script and tests it on the
+# test site (3 attempts per script, 5 scripts per run). A working fix is reviewed like any capture, creates a
+# SHOT work item (label ai-repaired) when needed and is opened as a pull request for you to review; it is
+# never merged automatically. "ai_dry_run" also covers the repair: the fix is tested and shown in the job
+# summary, but nothing is updated, ticketed or opened.
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
 #
 # Secrets: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account),
 # ANTHROPIC_API_KEY (the AI review is skipped without it).
@@ -29,7 +37,7 @@ on:
         type: boolean
         default: false
       ai_dry_run:
-        description: "AI review without updating Supabase or creating SHOT tickets"
+        description: "AI review and script repair without updating Supabase, creating SHOT tickets or opening pull requests"
         type: boolean
         default: false
 
@@ -65,7 +73,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     permissions:
-      contents: write # only used to commit baselines when update_baselines is ticked
+      contents: write # commits baselines (update_baselines) and pushes AI repair branches
+      pull-requests: write # opens pull requests with AI script repairs (never merged automatically)
     env:
       PRODUCT: ${{ needs.pick.outputs.product }}
       UPDATE_BASELINES: ${{ inputs.update_baselines || false }}
@@ -111,6 +120,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AI_REVIEW_DRY_RUN: ${{ inputs.ai_dry_run || false }}
         run: node scripts/ai-review.mjs
+
+      - name: AI repair of scripts that did not reach their screen
+        if: ${{ !cancelled() && env.UPDATE_BASELINES != 'true' }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_REVIEW_DRY_RUN: ${{ inputs.ai_dry_run || false }}
+          AI_REPAIR_DRY_RUN: ${{ inputs.ai_dry_run || false }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ai-repair.mjs
 
       - name: Summary
         if: always()

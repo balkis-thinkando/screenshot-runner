@@ -10,31 +10,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { sendToShot } from "./shot.mjs";
 
-const MODEL = "claude-opus-5-5";
+export const MODEL = "claude-opus-5-5";
 const maxReviews = Number(process.env.MAX_REVIEWS ?? 25);
 const dryRun = process.env.AI_REVIEW_DRY_RUN === "true";
 
-const summary = (md) => process.env.GITHUB_STEP_SUMMARY && appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+export const summary = (md) => process.env.GITHUB_STEP_SUMMARY && appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.log("ANTHROPIC_API_KEY is not set: skipping the AI review.");
-  summary("\n_AI review skipped: the ANTHROPIC_API_KEY secret is not set._\n");
-  process.exit(0);
-}
-
-const file = "results/verdicts.jsonl";
-const flagged = (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [])
-  .filter((r) => r.verdict === "needs_review" && r.capturePath && existsSync(r.capturePath));
-if (!flagged.length) {
-  console.log("Nothing to review.");
-  process.exit(0);
-}
-if (flagged.length > maxReviews) console.log(`${flagged.length} flagged; reviewing the first ${maxReviews} (MAX_REVIEWS).`);
-
-const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-const client = new Anthropic();
+// Created on first use, so scripts/ai-repair.mjs can import review() without side effects
+let _db, _client;
+export const db = () => (_db ??= createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }));
+const client = () => (_client ??= new Anthropic());
 
 const SYSTEM = `You review screenshots in Atlassian University lessons for a content maintenance team.
 You get the screenshot currently published in a lesson and a new capture of the same screen, taken today on a
@@ -74,16 +62,16 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-async function lessonContext(assetId) {
-  const { data: recipe, error } = await db
+export async function lessonContext(assetId) {
+  const { data: recipe, error } = await db()
     .from("screenshot_recipes")
     .select("lesson_id, image_url, must_show, ignore, notes, capture")
     .eq("asset_id", assetId)
     .single();
   if (error || !recipe) throw new Error(`No screenshot_recipes row for asset ${assetId}`);
   const [{ data: sections }, { data: shot }] = await Promise.all([
-    db.from("sections").select("title, body").eq("lesson_id", recipe.lesson_id),
-    db.from("lesson_screenshots").select("section, alt").eq("lesson_id", recipe.lesson_id).eq("asset_id", assetId).maybeSingle(),
+    db().from("sections").select("title, body").eq("lesson_id", recipe.lesson_id),
+    db().from("lesson_screenshots").select("section, alt").eq("lesson_id", recipe.lesson_id).eq("asset_id", assetId).maybeSingle(),
   ]);
   // Mark this image's section so the review ties lesson-text updates to the right screenshot
   // (the image's heading is either a section title or a sub-heading inside a section's text)
@@ -96,7 +84,11 @@ async function lessonContext(assetId) {
   return { recipe, shot, lessonText };
 }
 
-async function review(row) {
+/**
+ * Compares the lesson image with row.capturePath. extra: more context lines (ai-repair.mjs uses it to say
+ * that the path to the screen changed).
+ */
+export async function review(row, extra = []) {
   const { recipe, shot, lessonText } = await lessonContext(row.assetId);
   const lessonImg = await fetch(recipe.image_url);
   if (!lessonImg.ok) throw new Error(`Could not download the lesson image (${lessonImg.status})`);
@@ -113,11 +105,13 @@ async function review(row) {
     `Recipe notes: ${recipe.notes ?? "none"}`,
     `Scripted check results: ${JSON.stringify(row.checks ?? [])}`,
     "",
+    ...extra,
+    "",
     "Lesson text (for deciding steps_broken):",
     lessonText,
   ].join("\n");
 
-  const response = await client.beta.messages.create({
+  const response = await client().beta.messages.create({
     model: MODEL,
     max_tokens: 16000,
     betas: ["server-side-fallback-2026-07-01"],
@@ -144,42 +138,62 @@ async function review(row) {
   return { ...JSON.parse(text), lessonImage: recipe.image_url };
 }
 
-const cell = (t) => String(t ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").slice(0, 300);
-const lines = ["\n## AI review", "", "| Screenshot | AI verdict | Ticket | Summary |", "|---|---|---|---|"];
-let failures = 0;
+export const cell = (t) => String(t ?? "").replace(/\s+/g, " ").replace(/\|/g, "/").slice(0, 300);
 
-for (const row of flagged.slice(0, maxReviews)) {
-  let verdict = "needs_review";
-  let ticket = "";
-  let note = "";
-  try {
-    const result = await review(row);
-    verdict = result.verdict;
-    note = result.summary;
-    console.log(`${row.title}: ${verdict}\n  ${result.changes.join("\n  ")}`);
-
-    if (!dryRun && row.runId) {
-      const { error } = await db.from("recipe_runs").update({ verdict, summary: `AI review: ${note}` }).eq("id", row.runId);
-      if (error) throw error;
-    }
-    if (["material", "steps_broken"].includes(verdict)) {
-      if (dryRun) {
-        ticket = "(dry run)";
-      } else {
-        const { ok, body } = await sendToShot({ assetId: row.assetId, verdict, changes: result.changes, png: row.capturePath, lessonImage: result.lessonImage, aiReviewed: true });
-        if (!ok) throw new Error(`Ticket not created: ${body.error ?? JSON.stringify(body)}`);
-        ticket = body.status === "duplicate" ? `${body.key} (already open)` : body.key;
-      }
-    }
-  } catch (e) {
-    failures++;
-    note = e instanceof Anthropic.APIError ? `Claude API error ${e.status}: ${e.message}` : `Review failed: ${e.message}`;
-    console.error(`${row.title}: ${note}`);
+async function main() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.log("ANTHROPIC_API_KEY is not set: skipping the AI review.");
+    summary("\n_AI review skipped: the ANTHROPIC_API_KEY secret is not set._\n");
+    return;
   }
-  lines.push(`| ${cell(row.title)} | ${verdict} | ${cell(ticket)} | ${cell(note)} |`);
+
+  const file = "results/verdicts.jsonl";
+  const flagged = (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [])
+    .filter((r) => r.verdict === "needs_review" && r.capturePath && existsSync(r.capturePath));
+  if (!flagged.length) {
+    console.log("Nothing to review.");
+    return;
+  }
+  if (flagged.length > maxReviews) console.log(`${flagged.length} flagged; reviewing the first ${maxReviews} (MAX_REVIEWS).`);
+
+  const lines = ["\n## AI review", "", "| Screenshot | AI verdict | Ticket | Summary |", "|---|---|---|---|"];
+  let failures = 0;
+
+  for (const row of flagged.slice(0, maxReviews)) {
+    let verdict = "needs_review";
+    let ticket = "";
+    let note = "";
+    try {
+      const result = await review(row);
+      verdict = result.verdict;
+      note = result.summary;
+      console.log(`${row.title}: ${verdict}\n  ${result.changes.join("\n  ")}`);
+
+      if (!dryRun && row.runId) {
+        const { error } = await db().from("recipe_runs").update({ verdict, summary: `AI review: ${note}` }).eq("id", row.runId);
+        if (error) throw error;
+      }
+      if (["material", "steps_broken"].includes(verdict)) {
+        if (dryRun) {
+          ticket = "(dry run)";
+        } else {
+          const { ok, body } = await sendToShot({ assetId: row.assetId, verdict, changes: result.changes, png: row.capturePath, lessonImage: result.lessonImage, aiReviewed: true });
+          if (!ok) throw new Error(`Ticket not created: ${body.error ?? JSON.stringify(body)}`);
+          ticket = body.status === "duplicate" ? `${body.key} (already open)` : body.key;
+        }
+      }
+    } catch (e) {
+      failures++;
+      note = e instanceof Anthropic.APIError ? `Claude API error ${e.status}: ${e.message}` : `Review failed: ${e.message}`;
+      console.error(`${row.title}: ${note}`);
+    }
+    lines.push(`| ${cell(row.title)} | ${verdict} | ${cell(ticket)} | ${cell(note)} |`);
+  }
+
+  const md = lines.join("\n") + "\n";
+  console.log(md);
+  summary(md);
+  if (failures) process.exit(1);
 }
 
-const md = lines.join("\n") + "\n";
-console.log(md);
-summary(md);
-if (failures) process.exit(1);
+if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();

@@ -11,10 +11,12 @@ import { brand } from "./frame.mjs";
 
 /**
  * @param {{ assetId: string, verdict: string, changes: string[] | string, png?: string, issue?: string,
- *           aiReviewed?: boolean, dryRun?: boolean, raw?: boolean, lessonImage?: string, attachOnly?: boolean }} t
+ *           aiReviewed?: boolean, aiRepaired?: boolean, stepsChanged?: string, dryRun?: boolean, raw?: boolean,
+ *           lessonImage?: string, attachOnly?: boolean }} t
  * The capture is framed like the lesson images before it is attached, unless raw is true. With lessonImage
  * (URL of the current lesson image), a side-by-side comparison is attached too. With issue and attachOnly,
- * the images are added to that ticket and its description is left alone.
+ * the images are added to that ticket and its description is left alone. aiRepaired (label ai-repaired) and
+ * stepsChanged (how the path to the screen changed) come from scripts/ai-repair.mjs.
  * @returns {Promise<{ ok: boolean, body: any }>}
  */
 export async function sendToShot(t) {
@@ -34,6 +36,8 @@ export async function sendToShot(t) {
   if (t.issue) form.append("issue_key", t.issue);
   if (t.attachOnly) form.append("attach_only", "true");
   if (t.aiReviewed) form.append("ai_reviewed", "true");
+  if (t.aiRepaired) form.append("ai_repaired", "true");
+  if (t.stepsChanged) form.append("steps_changed", t.stepsChanged);
   if (t.dryRun) form.append("dry_run", "true");
 
   // Framed copy and comparison in the temp folder, removed once sent

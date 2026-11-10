@@ -1,7 +1,8 @@
 import { test, expect, Page, Locator } from "@playwright/test";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { db, settings, Settings } from "./supabase";
-import { hideFloatingButtons } from "./tweaks";
+import { anonymize, hideFloatingButtons } from "./tweaks";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
 
@@ -41,6 +42,9 @@ export type Recipe = {
  *  unchanged    — every check passed and the capture matches the baseline. No AI needed.
  *  needs_review — a check failed, the capture differs, or a step failed. Goes to AI review.
  *  blocked      — sign-in expired, org not found, missing test data. Fix the environment.
+ * When the script cannot reach its screen (a step or the capture fails), the run stays needs_review in
+ * Supabase but is logged as unreachable: the job fails (the owner is emailed) and scripts/ai-repair.mjs
+ * gets the page snapshot saved here.
  */
 export function runRecipe(r: Recipe) {
   test(r.title, { tag: `@${r.product}` }, async ({ page }, info) => {
@@ -56,6 +60,7 @@ export function runRecipe(r: Recipe) {
     let failedStep: string | null = null;
     let baselineMatch: boolean | null = null;
     let capturePath: string | null = null;
+    let snapshot: Snapshot | null = null;
 
     try {
       await r.navigate(page, s);
@@ -63,8 +68,7 @@ export function runRecipe(r: Recipe) {
     } catch (e) {
       verdict = e instanceof Blocked ? "blocked" : "needs_review";
       failedStep = (e as Error).message;
-      // What the page showed when the steps stopped (local test output only, never uploaded)
-      await page.screenshot({ path: info.outputPath("navigation-failed.png") }).catch(() => {});
+      if (verdict === "needs_review") snapshot = await saveSnapshot(page, info.outputPath("navigation-failed"), e as Error);
     }
 
     if (!failedStep) {
@@ -78,6 +82,8 @@ export function runRecipe(r: Recipe) {
       } catch (e) {
         verdict = "needs_review";
         failedStep = `Tweak or capture failed: ${(e as Error).message}`;
+        capturePath = null;
+        snapshot = await saveSnapshot(page, info.outputPath("navigation-failed"), e as Error);
       }
     }
 
@@ -104,7 +110,8 @@ export function runRecipe(r: Recipe) {
     if (finalAttempt) {
       let runId: string | null = null;
       try {
-        runId = await record(r, s, { verdict, checks: checks.results, failedStep, baselineMatch });
+        const logged = snapshot ? `Screen not reached: ${failedStep}` : failedStep;
+        runId = await record(r, s, { verdict, checks: checks.results, failedStep: logged, baselineMatch });
       } catch (e) {
         logVerdict({ file: r.file, title: r.title, verdict: "error", failedStep: `Could not record the run in Supabase: ${(e as Error).message}`, failed: [] });
         throw e;
@@ -114,6 +121,8 @@ export function runRecipe(r: Recipe) {
         title: r.title,
         verdict,
         failedStep,
+        // The script stopped before the capture: ai-repair.mjs gets the snapshot (local files only)
+        ...(snapshot ? { unreachable: true, snapshot } : {}),
         failed: [
           ...checks.results.filter((c) => c.result === "fail").map((c) => c.check),
           ...(baselineMatch === false ? ["Capture differs from the reference image (or there is none yet)"] : []),
@@ -132,6 +141,37 @@ export function runRecipe(r: Recipe) {
   });
 }
 
+/** What the page showed when a script stopped (local test output only, never uploaded). */
+type Snapshot = { url: string; screenshot: string | null; ariaTree: string | null; error: string };
+
+async function saveSnapshot(page: Page, stem: string, e: Error): Promise<Snapshot> {
+  const shot = `${stem}.png`;
+  const tree = `${stem}.aria.txt`;
+  // The snapshot goes to Claude for the repair: avatars become initials, email addresses are removed
+  await anonymize(page).catch(() => {});
+  const okShot = await page.screenshot({ path: shot }).then(() => true, () => false);
+  const aria = await page.accessibility.snapshot({ interestingOnly: true }).catch(() => null);
+  if (aria) writeFileSync(tree, noEmails(ariaLines(aria).join("\n")).slice(0, 60_000));
+  // The message and the stack lines in this repo point at the step that failed
+  const stack = (e.stack ?? "").split("\n").filter((l) => /\/(recipes|lib)\//.test(l)).slice(0, 5).map((l) => l.trim());
+  const error = noEmails([e.message, ...stack].join("\n").replace(/\u001b\[[0-9;]*m/g, ""));
+  return { url: page.url(), screenshot: okShot ? shot : null, ariaTree: aria ? tree : null, error };
+}
+
+const noEmails = (t: string) => t.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "<email>");
+
+type AxNode = { role: string; name?: string; value?: string | number; checked?: unknown; expanded?: boolean; children?: AxNode[] };
+
+/** Accessibility tree as indented lines: role "name" [state]. */
+function ariaLines(n: AxNode, depth = 0, out: string[] = []): string[] {
+  const state = [n.expanded !== undefined && `expanded=${n.expanded}`, n.checked !== undefined && `checked=${n.checked}`, n.value !== undefined && n.value !== "" && `value="${n.value}"`]
+    .filter(Boolean)
+    .join(" ");
+  if (!(n.role === "generic" && !n.name)) out.push(`${"  ".repeat(depth)}${n.role}${n.name ? ` "${n.name.slice(0, 120)}"` : ""}${state ? ` [${state}]` : ""}`);
+  for (const c of n.children ?? []) ariaLines(c, n.role === "generic" && !n.name ? depth : depth + 1, out);
+  return out;
+}
+
 /** One line per screenshot for scripts/summary.mjs (job summary and alerts). */
 function logVerdict(line: {
   file: string;
@@ -143,9 +183,13 @@ function logVerdict(line: {
   runId?: string | null;
   checks?: CheckResult[];
   capturePath?: string | null;
+  unreachable?: boolean;
+  snapshot?: Snapshot;
 }) {
-  mkdirSync("results", { recursive: true });
-  appendFileSync("results/verdicts.jsonl", JSON.stringify(line) + "\n");
+  // ai-repair.mjs tests repaired scripts with their own log (VERDICTS_FILE)
+  const file = process.env.VERDICTS_FILE ?? "results/verdicts.jsonl";
+  mkdirSync(dirname(file), { recursive: true });
+  appendFileSync(file, JSON.stringify(line) + "\n");
 }
 
 async function record(

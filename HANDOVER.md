@@ -68,17 +68,28 @@ in Claude Code sessions with the owner.
   ($450 to $1,350); total about $500 to $1,400 via API, or Team-seat limits over several weeks.
 - Monthly running: about $5 (at most about $25).
 
-### Next task: AI script repair (agreed design, not built)
-When a script cannot reach its screen (navigation error, no capture):
-1. Mark it clearly and fail the run so the owner is emailed (today it only shows as needs_review).
-2. AI repair step in CI: Claude gets recipe, script, failed step, page snapshot (accessibility tree +
-   screenshot); writes a corrected script; tests it on the live site (max 3 attempts per script, max 5
-   repairs per run).
-3. If it works: capture with the repaired script, AI review as usual (a changed path also counts as a
-   change, usually steps_broken), SHOT ticket with label `ai-repaired` and a line that the steps changed.
-4. Open a pull request with the script fix (workflow needs contents: write and pull-requests: write).
-   Never merge automatically.
-5. Test by breaking a script on purpose.
+### AI script repair (built 10 Nov 2026 on branch `ai-script-repair`; not yet on main)
+- `lib/recipe.ts`: when a step or the capture fails, the run is logged as `unreachable` (Supabase keeps
+  verdict needs_review, failed_step starts "Screen not reached:") with a snapshot: URL, error and stack,
+  accessibility tree (`navigation-failed.aria.txt`, emails removed) and screenshot (avatars anonymized).
+  `scripts/summary.mjs` fails the job for any unreachable screen, repaired or not.
+- `scripts/ai-repair.mjs` (CI step after the AI review): claude-opus-5-5, effort high, structured output.
+  Gets recipe row, script, imported lib files and snapshot; returns diagnosis, steps_changed and the full
+  script. Each script is checked (imports only @playwright/test and ../lib, no process/fs/fetch/eval,
+  Atlassian URLs only, same file/assetId/product) and run on the live site without secrets in its env
+  (`VERDICTS_FILE`, `RECORD_RUNS=false`). Max 3 attempts (failures go back with the new snapshot), max 5
+  per run. The working tree keeps the original script.
+- On success: AI review of the new capture (`review()` exported from ai-review.mjs; a changed path bumps
+  unchanged/cosmetic to steps_broken), recipe_runs updated, SHOT ticket with `ai_repaired` +
+  `steps_changed`, PR on branch `ai-repair/<file>-<run id>`. `ai_dry_run` covers all of it (diff in the
+  job summary). `AI_REPAIR_FIXTURE` replays canned answers for local tests (no API key, nothing written).
+- Edge Function source updated (label `ai-repaired`, line "The steps to reach this screen have changed:
+  ..."); needs redeploy (v6). Until then those fields are ignored.
+- Repo setting needed for PRs: Actions > General > "Allow GitHub Actions to create and approve pull requests".
+- Tested 10 Nov locally: AUC-1792-1 broken on purpose (clicks a missing "Home" link); fixture attempts:
+  still wrong (retried with new snapshot), rule breaking (rejected), correct (reached the screen, verdict
+  steps_broken). Not yet tested with the real Claude call in CI.
+
 Other open items: let runs sign in by themselves (password secrets) so the session cannot expire; treat
 failed "Test data:" checks as blocked; regenerate Linux baselines (`product all`, update_baselines) after
 the 10 Nov viewport change; sorting pass and a one-product pilot for bulk recipes.
