@@ -19,6 +19,8 @@ const addButton = (page: Page) => page.locator(mainContent).getByRole("button", 
 async function areaAround(page: Page, name: string, parts: Locator[], pad = { x: 18, y: 14 }) {
   const boxes = [];
   for (const l of parts) {
+    // Parts that are not on the page (e.g. the empty-state text once a template exists) are skipped
+    if (!(await l.isVisible())) continue;
     const b = await l.boundingBox();
     if (b) boxes.push(b);
   }
@@ -52,8 +54,9 @@ runRecipe({
 
   async tweak(page) {
     await hideMessages(page, ["Your site now has roles"]);
-    await anonymize(page);
+    // Names first: anonymize() puts initials in the avatars, which neutralNames would rename too
     await neutralNames(page, "Last updated by");
+    await anonymize(page);
     await page.mouse.move(1270, 790);
     // Sidebar scrolled so the Settings heading sits just below the sidebar header, as in the lesson
     await page.locator("#admin-side-nav-settings-heading").evaluate((el) => {
