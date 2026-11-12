@@ -83,6 +83,24 @@ jobs:
 
       - run: npx playwright install --with-deps chromium
 
+      - name: Mac-like font rendering
+        # Grayscale smoothing without hinting, as on macOS (see launchOptions in playwright.config.ts)
+        run: |
+          mkdir -p ~/.config/fontconfig
+          cat > ~/.config/fontconfig/fonts.conf <<'XML'
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          <fontconfig>
+            <match target="font">
+              <edit name="antialias" mode="assign"><bool>true</bool></edit>
+              <edit name="hinting" mode="assign"><bool>false</bool></edit>
+              <edit name="hintstyle" mode="assign"><const>hintnone</const></edit>
+              <edit name="rgba" mode="assign"><const>none</const></edit>
+              <edit name="lcdfilter" mode="assign"><const>lcdnone</const></edit>
+            </match>
+          </fontconfig>
+          XML
+
       - name: Write sign-in session
         env:
           AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
