@@ -7,8 +7,10 @@
 
 import { runRecipe } from "../lib/recipe";
 import { openSignedIn } from "../lib/jira";
-import { anonymize, markers, neutralNames, spotlightAreas } from "../lib/tweaks";
+import { anonymize, fakeNames, fakePeople, markers, spotlightAreas } from "../lib/tweaks";
 
+// Owners as in the lesson (Mitch Davis is a real account on the training site, so not him)
+const JIRA_PEOPLE = fakePeople("Emma Rose", "Kevin Campbell");
 const LESSON_MENU = ["View performance insights", "Automation service status", "Import flows", "Export flows", "Transfer User", "Global configuration", "Configure steps"];
 const moreActions = (page: import("@playwright/test").Page) => page.getByRole("button", { name: "More actions", exact: true }).first();
 // The Flows tab row (the Global/Studio switcher is a separate tab list)
@@ -35,8 +37,8 @@ runRecipe({
 
   async tweak(page) {
     // Names first: anonymize() then turns the avatars into initials
-    await neutralNames(page, "Owner");
-    await anonymize(page);
+    await fakeNames(page, "Owner", JIRA_PEOPLE);
+    await anonymize(page, "AU", JIRA_PEOPLE);
     // Open the More actions menu, as in the lesson
     await moreActions(page).click();
     const items = page.getByRole("menuitem");

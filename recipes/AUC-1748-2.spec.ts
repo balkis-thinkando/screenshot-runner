@@ -7,7 +7,7 @@
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, openConfluenceAdmin } from "../lib/confluence";
-import { anonymize, hideMessages, renameOrg, spotlightAreas } from "../lib/tweaks";
+import { anonymize, FAKE_PEOPLE, fakeProfileNames, hideMessages, renameOrg, spotlightAreas } from "../lib/tweaks";
 
 const missionControlLink = (page: Page) => page.locator(`${adminNav} a[data-testid="admin-center"]`);
 // The bordered Overview card (h2 > title row > header > card)
@@ -20,30 +20,6 @@ const metricMenu = (page: Page) => page.getByRole("listbox");
 // options for the checks, then closed before the capture
 const menu = { groups: [] as string[], options: [] as string[] };
 
-/** Replaces the names of the people on Mission control (Confluence admins card) with User A, User B... */
-async function neutralPeople(page: Page) {
-  await page.evaluate(() => {
-    // Safety net: a profile picture that re-renders after anonymize() stays hidden
-    const style = document.createElement("style");
-    style.setAttribute("data-screenshot-tweak", "people");
-    style.textContent = 'img[src*="/aa-avatar/"] { visibility: hidden !important; }';
-    document.head.appendChild(style);
-    const prefix = "More information about ";
-    const real = Array.from(document.querySelectorAll(`[aria-label^="${prefix}"]`))
-      .map((el) => el.getAttribute("aria-label")!.slice(prefix.length).trim())
-      .filter((n) => n && n !== "this user");
-    const names = new Map(Array.from(new Set(real)).map((n, i) => [n, `User ${String.fromCharCode(65 + i)}`]));
-    const swap = (v: string) => { for (const [n, f] of names) v = v.replaceAll(n, f); return v; };
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue) n.nodeValue = swap(n.nodeValue);
-    document.querySelectorAll("[aria-label],[title],img[alt]").forEach((el) => {
-      for (const a of ["aria-label", "title", "alt"]) {
-        const v = el.getAttribute(a);
-        if (v) el.setAttribute(a, swap(v));
-      }
-    });
-  });
-}
 
 runRecipe({
   file: "AUC-1748-2",
@@ -68,8 +44,9 @@ runRecipe({
 
   async tweak(page, s) {
     await hideMessages(page, ["Your site now has roles"]);
-    await neutralPeople(page);
-    await anonymize(page);
+    // Fake names first, as in the lesson (Andrea Wilson, Orion Beck, Phil Mabrey); anonymize() then gives their pictures matching initials
+    await fakeProfileNames(page);
+    await anonymize(page, "AU", FAKE_PEOPLE);
     await renameOrg(page, s.test_org, s.display_org_name);
     // Opening the menu scrolls the content panel (smoothly, so it keeps moving for a moment after the menu
     // closes); once it has settled, back to the top so the page title shows, as in the lesson

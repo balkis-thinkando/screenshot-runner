@@ -10,7 +10,7 @@
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, openConfluenceAdmin } from "../lib/confluence";
-import { anonymize, hideMessages, renameOrg, spotlight } from "../lib/tweaks";
+import { anonymize, FAKE_PEOPLE, hideMessages, renameOrg, spotlight } from "../lib/tweaks";
 
 const publicLinksLink = (page: Page) => page.locator(`${adminNav} a[data-testid="public-links-site-admin"]`);
 const siteToggle = (page: Page) => page.locator("#public-links-setting-toggle");
@@ -41,16 +41,16 @@ async function scrollSidebarTo(page: Page, selector: string, top: number) {
   await page.waitForTimeout(300);
 }
 
-/** Personal spaces are named after people: show them as User A, User B... */
-async function neutralPersonalSpaces(page: Page) {
-  await spaceTable(page).evaluate((table) => {
+/** Personal spaces are named after people: show them with fake names */
+async function fakePersonalSpaces(page: Page) {
+  await spaceTable(page).evaluate((table, people) => {
     const names = new Map<string, string>();
     for (const a of Array.from(table.querySelectorAll<HTMLAnchorElement>('a[href*="/spaces/~"]'))) {
       const key = a.getAttribute("href")!;
-      if (!names.has(key)) names.set(key, `User ${String.fromCharCode(65 + names.size)}`);
+      if (!names.has(key)) names.set(key, people[names.size % people.length]);
       if (a.innerText.trim()) a.textContent = names.get(key)!;
     }
-  });
+  }, FAKE_PEOPLE);
 }
 
 let toggleWasOff = false;
@@ -70,7 +70,7 @@ runRecipe({
     await hideMessages(page, ["Your site now has roles"]);
     // Sidebar as in the lesson: scrolled to the top (Monitoring)
     await scrollSidebarTo(page, "#admin-navigation-monitoring-heading", 160);
-    await neutralPersonalSpaces(page);
+    await fakePersonalSpaces(page);
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page);
     // The lesson shows the site setting on. If it is off on the test site, show it on (display only, not saved).

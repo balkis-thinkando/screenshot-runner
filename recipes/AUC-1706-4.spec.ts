@@ -7,7 +7,7 @@
 import { Locator, Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, mainContent, openConfluenceAdmin, sameOrder } from "../lib/confluence";
-import { anonymize, arrowTo, hideMessages, neutralNames, spotlightAreas } from "../lib/tweaks";
+import { anonymize, FAKE_PEOPLE, fakeNames, arrowTo, hideMessages, spotlightAreas } from "../lib/tweaks";
 
 const link = (page: Page) => page.locator(`${adminNav} a[data-testid="globaltemplates"]`);
 const title = (page: Page) => page.locator(`${mainContent} h2`, { hasText: /^Global templates and blueprints$/ });
@@ -54,9 +54,9 @@ runRecipe({
 
   async tweak(page) {
     await hideMessages(page, ["Your site now has roles"]);
-    // Names first: anonymize() puts initials in the avatars, which neutralNames would rename too
-    await neutralNames(page, "Last updated by");
-    await anonymize(page);
+    // Names first (Andrea Wilson, as in the lesson): anonymize() puts initials in the avatars, which fakeNames would rename too
+    await fakeNames(page, "Last updated by");
+    await anonymize(page, "AU", FAKE_PEOPLE);
     await page.mouse.move(1270, 790);
     // Sidebar scrolled so the Settings heading sits just below the sidebar header, as in the lesson
     await page.locator("#admin-side-nav-settings-heading").evaluate((el) => {
