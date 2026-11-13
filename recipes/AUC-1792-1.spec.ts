@@ -6,7 +6,7 @@
 
 import { runRecipe } from "../lib/recipe";
 import { adminButton, mainContent, openConfluenceHome } from "../lib/confluence";
-import { anonymize, arrowTo, hideMessages, spotlight } from "../lib/tweaks";
+import { anonymize, hideMessages, spotlight } from "../lib/tweaks";
 
 runRecipe({
   file: "AUC-1792-1",
@@ -20,7 +20,6 @@ runRecipe({
     await hideMessages(page, ["Your site now has roles"]);
     await anonymize(page);
     await spotlight(page, adminButton(page), { markers: false });
-    await arrowTo(page, adminButton(page));
   },
 
   // The lesson image shows only the top of the page

@@ -196,36 +196,6 @@ export async function spotlight(
 }
 
 /**
- * Lesson-style pointer: a white curved arrow ending at the left edge of the target, coming from below-left
- * (default) or curling down from above. `offsetY` sets where on the target it points (default: middle).
- */
-export async function arrowTo(page: Page, target: Locator, opts: { from?: "below" | "above"; offsetY?: number } = {}) {
-  const r = await target.boundingBox();
-  if (!r) throw new Error("arrowTo: target is not visible");
-  await page.evaluate(([r, from, offsetY]) => {
-    const end = { x: r.x - 6, y: r.y + (offsetY ?? r.height / 2) };
-    const curve =
-      from === "above"
-        ? (() => {
-            const start = { x: end.x + 4, y: end.y - 75 };
-            return `M${start.x},${start.y} C${start.x - 45},${start.y + 10} ${end.x - 45},${end.y} ${end.x},${end.y}`;
-          })()
-        : (() => {
-            const start = { x: end.x - 120, y: end.y + 150 };
-            return `M${start.x},${start.y} C${start.x - 10},${end.y + 30} ${end.x - 70},${end.y} ${end.x},${end.y}`;
-          })();
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("data-screenshot-tweak", "arrow");
-    svg.setAttribute("style", "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647");
-    svg.innerHTML =
-      `<defs><marker id="st-head" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto">` +
-      `<path d="M0,0 L8,5 L0,10 Z" fill="#fff"/></marker></defs>` +
-      `<path d="${curve}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" marker-end="url(#st-head)"/>`;
-    document.body.appendChild(svg);
-  }, [r, opts.from ?? "below", opts.offsetY ?? null] as const);
-}
-
-/**
  * Lesson-style annotation with several highlighted areas: dims the page except each area and outlines each
  * one in orange (the single-area spotlight() can't leave more than one hole in the overlay).
  * An area can be several locators; it then covers all of them.

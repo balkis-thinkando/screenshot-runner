@@ -9,7 +9,7 @@
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, mainContent, openConfluenceAdmin } from "../lib/confluence";
-import { anonymize, arrowTo, hideMessages, spotlightAreas } from "../lib/tweaks";
+import { anonymize, hideMessages, spotlightAreas } from "../lib/tweaks";
 
 const link = (page: Page) => page.locator(`${adminNav} a[data-testid="announcement-banner"]`);
 const heading = (page: Page, text: string) => page.locator(`${mainContent} h2`, { hasText: new RegExp(`^${text}$`) });
@@ -66,7 +66,6 @@ runRecipe({
     const h = (await heading(page, "Title").boundingBox())!;
     const form = await areaBox(page, "announcement-form-area", { x: h.x - 20, y: h.y - 20, width: h.width + 40, height: 800 - 15 - (h.y - 20) });
     await spotlightAreas(page, [link(page), form]);
-    await arrowTo(page, form, { offsetY: 270 });
   },
 
   async checks(page, c) {

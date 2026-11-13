@@ -7,7 +7,7 @@
 import { Locator, Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, mainContent, openConfluenceAdmin, sameOrder } from "../lib/confluence";
-import { anonymize, FAKE_PEOPLE, fakeNames, arrowTo, hideMessages, spotlightAreas } from "../lib/tweaks";
+import { anonymize, FAKE_PEOPLE, fakeNames, hideMessages, spotlightAreas } from "../lib/tweaks";
 
 const link = (page: Page) => page.locator(`${adminNav} a[data-testid="globaltemplates"]`);
 const title = (page: Page) => page.locator(`${mainContent} h2`, { hasText: /^Global templates and blueprints$/ });
@@ -72,8 +72,6 @@ runRecipe({
       page.getByText("There are no global templates at the moment."),
     ], { x: 18, y: 8 });
     await spotlightAreas(page, [link(page), area]);
-    // Arrow from just above the sidebar item to the top of the section
-    await arrowTo(page, area, { offsetY: 10 });
   },
 
   // Templates, their authors and dates are site data
