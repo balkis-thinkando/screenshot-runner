@@ -7,7 +7,7 @@
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { adminNav, adminNavLabels, mainContent, openConfluenceAdmin, sameOrder } from "../lib/confluence";
-import { anonymize, arrowTo, hideMessages, spotlightAreas } from "../lib/tweaks";
+import { anonymize, hideMessages, spotlightAreas } from "../lib/tweaks";
 
 const link = (page: Page) => page.locator(`${adminNav} a[data-testid="generalconfiguration"]`);
 const title = (page: Page) => page.locator(`${mainContent} h2`, { hasText: /^General configuration$/ });
@@ -57,7 +57,6 @@ runRecipe({
     const h = (await title(page).boundingBox())!;
     const content = await areaBox(page, "general-configuration-area", { x: h.x - 20, y: h.y - 20, width: h.width + 40, height: 800 - 20 - (h.y - 20) });
     await spotlightAreas(page, [link(page), content]);
-    await arrowTo(page, content, { offsetY: 40 });
   },
 
   // The form shows the site's own values (title, message, landing page)
