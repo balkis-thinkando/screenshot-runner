@@ -6,7 +6,7 @@
 
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
-import { mainContent, openConfluenceAdmin, sameOrder } from "../lib/confluence";
+import { hideSidebar, mainContent, openConfluenceAdmin, sameOrder } from "../lib/confluence";
 import { anonymize, FAKE_PEOPLE, fakeProfileNames, hideMessages, renameOrg, spotlightAreas } from "../lib/tweaks";
 
 const suggestions = '[data-testid="admin-center-suggestion-section"]';
@@ -15,16 +15,6 @@ const suggestions = '[data-testid="admin-center-suggestion-section"]';
 const card = (page: Page, title: string) =>
   page.locator('[data-testid="card-container"]').filter({ has: page.locator("h3", { hasText: title }) }).first();
 const LESSON_CARDS = ["External access features", "New features", "Confluence admins"];
-
-/** The lesson shows the page with the sidebar collapsed: hide it display-only (the real collapse is a saved preference). */
-async function hideSidebar(page: Page) {
-  await page.evaluate(() => {
-    document.querySelector<HTMLElement>("#side-navigation")!.style.display = "none";
-    // The layout grid keeps a fixed sidebar column; give its width to the main column
-    document.querySelector<HTMLElement>("#unsafe-design-system-page-layout-root")!.style.gridTemplateColumns = `0px 0px ${innerWidth}px 0px`;
-  });
-  await page.waitForTimeout(1_500); // let the page reflow to its wide layout
-}
 
 runRecipe({
   file: "AUC-1748-4",

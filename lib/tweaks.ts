@@ -72,8 +72,8 @@ export async function anonymize(page: Page, initials = "AU", people: string[] = 
       }
     });
     // Profile pictures: Atlassian serves them from .../avatar, .../aa-avatar or gravatar
-    // ...but not work type or space icons, which Jira also serves from .../universal_avatar/view/type/...
-    const icon = /\/view\/type\/(issuetype|project)|issuetype/i;
+    // ...but not work type, space or request type icons, which Jira also serves from .../universal_avatar/view/type/...
+    const icon = /\/view\/type\/(issuetype|project|SD_REQTYPE)|issuetype/i;
     // Colours of Atlassian's own initials avatars
     const colours = ["#0C66E4", "#E56910", "#6E5DC6", "#1F845A", "#C9372C", "#206A83"];
     const personNear = (el: Element) => {
@@ -86,6 +86,8 @@ export async function anonymize(page: Page, initials = "AU", people: string[] = 
     };
     document.querySelectorAll<HTMLImageElement>('img[src*="avatar"]').forEach((img) => {
       if (icon.test(img.getAttribute("src") ?? "")) return;
+      // Pictures a recipe marked as not a person (e.g. Rovo agent icons, also served as avatars)
+      if (img.closest("[data-screenshot-keep]")) return;
       const { width, height } = img.getBoundingClientRect();
       const p = personNear(img);
       const span = document.createElement("span");
@@ -93,7 +95,7 @@ export async function anonymize(page: Page, initials = "AU", people: string[] = 
       span.style.cssText =
         `display:inline-flex;align-items:center;justify-content:center;width:${width || 24}px;` +
         `height:${height || 24}px;border-radius:50%;background:${p >= 0 ? colours[p % colours.length] : "#1D2125"};` +
-        `color:#fff;font:600 10px sans-serif`;
+        `color:#fff;font:600 ${Math.min(10, Math.round((height || 24) * 0.45))}px sans-serif;white-space:nowrap;overflow:hidden`;
       img.replaceWith(span);
     });
   }, [initials, people] as const);
@@ -117,7 +119,12 @@ export async function hideMessages(page: Page, startsWith: string[]) {
     for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
       const text = el.innerText?.trim() ?? "";
       if (text.length > 600 || !starts.some((s) => text.startsWith(s))) continue;
-      const box = el.closest<HTMLElement>('[role="dialog"],section,[data-testid]') ?? el;
+      let box = el.closest<HTMLElement>('[role="dialog"],section,[data-testid]') ?? el;
+      // A test id far up the page (e.g. the main area) is not the message: take the largest small ancestor instead
+      if (box.getBoundingClientRect().height > 400) {
+        box = el;
+        while (box.parentElement && box.parentElement.getBoundingClientRect().height < 250) box = box.parentElement;
+      }
       box.style.display = "none";
     }
   }, startsWith);
@@ -319,4 +326,55 @@ export async function fakeNames(page: Page, columnHeader: string, people = FAKE_
       }
     }
   }, [columnHeader, people] as const);
+}
+
+/** A cell of fakeTable(): plain text, or HTML (an app icon, a lozenge) with `html: true`. */
+export type FakeCell = string | { html: string };
+
+/**
+ * Display-only stand-in for a list the test site has no data for: replaces `replace` (usually the empty state) with a
+ * table in the Atlassian admin style. `header: false` adds rows only, under a header the page already shows.
+ */
+export async function fakeTable(
+  page: Page,
+  replace: Locator,
+  columns: { label: string; width?: string; align?: "left" | "right" }[],
+  rows: FakeCell[][],
+  opts: { header?: boolean } = {},
+) {
+  await replace.first().evaluate(
+    (el, [columns, rows, header]) => {
+      const cell = (c: FakeCell) => (typeof c === "string" ? c.replace(/[&<>]/g, (ch) => `&#${ch.charCodeAt(0)};`) : c.html);
+      const td = "padding:12px 8px;font:inherit;font-size:14px;color:#292A2E;vertical-align:middle;border-bottom:1px solid #0B120E24;";
+      const th = "padding:8px;font:inherit;font-size:14px;font-weight:600;color:#505258;text-align:left;border-bottom:2px solid #0B120E24;";
+      const table = document.createElement("table");
+      table.setAttribute("data-screenshot-tweak", "fake-table");
+      table.style.cssText = "width:100%;border-collapse:collapse;table-layout:fixed;font-family:inherit;";
+      table.innerHTML =
+        (header
+          ? `<thead><tr>${columns.map((c) => `<th style="${th}width:${c.width ?? "auto"};text-align:${c.align ?? "left"}">${c.label}</th>`).join("")}</tr></thead>`
+          : `<colgroup>${columns.map((c) => `<col style="width:${c.width ?? "auto"}">`).join("")}</colgroup>`) +
+        `<tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td style="${td}text-align:${columns[i].align ?? "left"}">${cell(c)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+      el.replaceWith(table);
+    },
+    [columns, rows, opts.header ?? true] as const,
+  );
+}
+
+/** HTML for an Atlassian admin button (default or subtle), for fakeTable() rows. */
+export const fakeButton = (label: string) =>
+  `<span style="display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1px solid #0B120E24;border-radius:4px;font-weight:500;color:#505258">${label}</span>`;
+
+/** HTML for a status lozenge (e.g. INACTIVE), for fakeTable() rows. */
+export const fakeLozenge = (label: string) =>
+  `<span style="display:inline-block;padding:0 4px;border-radius:3px;background:#DDDEE1;color:#292A2E;font-size:11px;font-weight:700;line-height:16px;text-transform:uppercase">${label}</span>`;
+
+/** Changes a "Showing 0 items" style count to the number of fake rows (the count may be split over several text nodes). */
+export async function setCount(page: Page, locator: Locator, text: string) {
+  await locator.first().evaluate((el, text) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const nodes: Node[] = [];
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+    nodes.forEach((n, i) => (n.nodeValue = i === 0 ? text : ""));
+  }, text);
 }

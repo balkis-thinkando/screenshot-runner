@@ -56,3 +56,23 @@ export function sameOrder(actual: string[], expected: string[]) {
     detail: same ? "Same items, same order" : `Now: ${actual.join(", ")}. Added: ${added.join(", ") || "none"}. Removed or renamed: ${removed.join(", ") || "none"}.`,
   };
 }
+
+/** For lessons that show a page with the sidebar collapsed: hides it display-only (the real collapse is a saved preference). */
+export async function hideSidebar(page: Page) {
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>("#side-navigation")!.style.display = "none";
+    // The layout grid keeps a fixed sidebar column; give its width to the main column
+    document.querySelector<HTMLElement>("#unsafe-design-system-page-layout-root")!.style.gridTemplateColumns = `0px 0px ${innerWidth}px 0px`;
+  });
+  await page.waitForTimeout(1_500); // let the page reflow to its wide layout
+}
+
+/** A page of the test site by space key and page ID, ready once its title shows. */
+export async function openConfluencePage(page: Page, s: Settings, space: string, pageId: string) {
+  // Through Atlassian sign-in: a page opened directly can stop at the sign-in screen
+  const url = `${s.test_site}/wiki/spaces/${space}/pages/${pageId}`;
+  await open(page, `https://id.atlassian.com/login?continue=${encodeURIComponent(url)}`, page.locator('[data-testid="title-text"], h1').first(), `Confluence page ${pageId}`);
+}
+
+/** The page used for Rovo shots: a long SyncUp page with text, an info panel and a table (no people pictured). */
+export const ROVO_PAGE = { space: "SyncUp", id: "2130015", title: "Engineering onboarding guide" };
