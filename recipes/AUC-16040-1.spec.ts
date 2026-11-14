@@ -81,8 +81,9 @@ runRecipe({
     // Outline Audit log in the sidebar, the first row of filters and the open Activities list (separate areas:
     // overlapping ones would cancel each other's highlight)
     const basic = button(page, /^Basic$/);
-    const location = button(page, /^Location/);
-    await spotlightAreas(page, [page.locator(`${sidebar} a`, { hasText: /^Audit log$/ }), [basic, location], dropdown(page)]);
+    // The first row of filters ends at IP Address on narrow fonts (Linux wraps Location to the next row)
+    const ipAddress = button(page, /^IP Address/);
+    await spotlightAreas(page, [page.locator(`${sidebar} a`, { hasText: /^Audit log$/ }), [basic, ipAddress], dropdown(page)]);
   },
 
   // Dates, IPs and activities are site data

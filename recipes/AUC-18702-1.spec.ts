@@ -29,7 +29,7 @@ runRecipe({
   },
 
   async tweak(page, s) {
-    await page.mouse.move(640, 790);
+    await page.mouse.move(1279, 799); // no tooltip left on the page
     await renameOrg(page, s.test_org, s.display_org_name);
     // The page author (byline and briefing panel) has no profile card label: replace the name itself
     const author = (await page.getByText(/^By .+/).first().innerText()).replace(/^By /, "").trim();

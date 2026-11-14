@@ -45,7 +45,7 @@ runRecipe({
   },
 
   async tweak(page, s) {
-    await page.mouse.move(640, 790);
+    await page.mouse.move(1279, 799); // no tooltip left on the page
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page, "AU", FAKE_PEOPLE);
     // The lesson also shows the Create request type menu; it closes when the prompt opens, so outline the button

@@ -30,7 +30,7 @@ runRecipe({
   },
 
   async tweak(page, s) {
-    await page.mouse.move(640, 790);
+    await page.mouse.move(1279, 799); // no tooltip left on the page
     await renameOrg(page, s.test_org, s.display_org_name);
     const author = (await page.getByText(/^By .+/).first().innerText().catch(() => "")).replace(/^By /, "").trim();
     if (author) await renameOrg(page, author, FAKE_PEOPLE[0]);

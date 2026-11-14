@@ -26,7 +26,7 @@ runRecipe({
   },
 
   async tweak(page, s) {
-    await page.mouse.move(640, 790); // no tooltip left on the menu's close button
+    await page.mouse.move(1279, 799); // no tooltip left on the page
     await renameOrg(page, s.test_org, s.display_org_name);
     await fakeGreeting(page, FAKE_PEOPLE[5].split(" ")[0]);
     await keepAgentIcons(page);
