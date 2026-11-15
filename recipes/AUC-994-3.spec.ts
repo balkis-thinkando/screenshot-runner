@@ -9,7 +9,7 @@
 
 import { runRecipe } from "../lib/recipe";
 import { openJqlSearch } from "../lib/jira";
-import { anonymize, arrowTo, spotlightAreas } from "../lib/tweaks";
+import { anonymize, spotlightAreas } from "../lib/tweaks";
 
 const JQL = 'Employee in aqlFunction("Name = \\"Alana Grant\\"")';
 
@@ -33,7 +33,6 @@ runRecipe({
       [page.locator(searchBar).first(), page.locator(editor).locator("xpath=../..")],
       [page.locator(results), page.locator(footer)],
     ]);
-    await arrowTo(page, page.locator(results), { from: "above", offsetY: 60 });
   },
 
   async checks(page, c) {

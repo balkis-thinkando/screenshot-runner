@@ -20,9 +20,46 @@ export async function renameOrg(page: Page, from: string, to: string) {
   }, [from, to]);
 }
 
-/** Replaces email addresses and profile pictures with neutral placeholders. */
-export async function anonymize(page: Page, initials = "AU") {
-  await page.evaluate((initials) => {
+/** Realistic fake names for the people in screenshots. The first ones are the names the lessons use.
+ *  Not real accounts: Cassi Owens, Max Taylor, Mitch Davis and Alana Grant are real on the training sites, so they're not here. */
+export const FAKE_PEOPLE = [
+  "Andrea Wilson", "Orion Beck", "Phil Mabrey", "Jennifer Evans", "Emma Rose", "Kevin Campbell",
+  "Priya Shah", "Daniel Okafor", "Sofia Martins", "Liam Chen", "Grace Kim", "Noah Bennett",
+];
+
+/** FAKE_PEOPLE, starting with the given names (e.g. the ones the lesson image shows). */
+export const fakePeople = (...first: string[]) => [...first, ...FAKE_PEOPLE.filter((n) => !first.includes(n))];
+
+/** Replaces the names of the people with a profile card ("More information about ...") with fake names, the same name
+ *  for the same person, everywhere on the page. */
+export async function fakeProfileNames(page: Page, people = FAKE_PEOPLE) {
+  await page.evaluate((people) => {
+    // Safety net: a profile picture that re-renders after anonymize() stays hidden
+    const style = document.createElement("style");
+    style.setAttribute("data-screenshot-tweak", "people");
+    style.textContent = 'img[src*="/aa-avatar/"] { visibility: hidden !important; }';
+    document.head.appendChild(style);
+    const prefix = "More information about ";
+    const real = Array.from(document.querySelectorAll(`[aria-label^="${prefix}"]`))
+      .map((el) => el.getAttribute("aria-label")!.slice(prefix.length).trim())
+      .filter((n) => n && n !== "this user");
+    const names = new Map(Array.from(new Set(real)).map((n, i) => [n, people[i % people.length]]));
+    const swap = (v: string) => { for (const [n, f] of names) v = v.replaceAll(n, f); return v; };
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.nodeValue) n.nodeValue = swap(n.nodeValue);
+    document.querySelectorAll("[aria-label],[title],img[alt]").forEach((el) => {
+      for (const a of ["aria-label", "title", "alt"]) {
+        const v = el.getAttribute(a);
+        if (v) el.setAttribute(a, swap(v));
+      }
+    });
+  }, people);
+}
+
+/** Replaces email addresses and profile pictures with neutral placeholders.
+ *  With `people` (fake names already on the page), a picture next to one of those names gets that person's initials. */
+export async function anonymize(page: Page, initials = "AU", people: string[] = []) {
+  await page.evaluate(([initials, people]) => {
     const email = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -37,17 +74,29 @@ export async function anonymize(page: Page, initials = "AU") {
     // Profile pictures: Atlassian serves them from .../avatar, .../aa-avatar or gravatar
     // ...but not work type or space icons, which Jira also serves from .../universal_avatar/view/type/...
     const icon = /\/view\/type\/(issuetype|project)|issuetype/i;
+    // Colours of Atlassian's own initials avatars
+    const colours = ["#0C66E4", "#E56910", "#6E5DC6", "#1F845A", "#C9372C", "#206A83"];
+    const personNear = (el: Element) => {
+      // The closest container with exactly one of the names; one with several is a list, so stop there
+      for (let a = el.parentElement, i = 0; a && i < 5; a = a.parentElement, i++) {
+        const found = people.map((n, p) => (a!.textContent?.includes(n) ? p : -1)).filter((p) => p >= 0);
+        if (found.length) return found.length === 1 ? found[0] : -1;
+      }
+      return -1;
+    };
     document.querySelectorAll<HTMLImageElement>('img[src*="avatar"]').forEach((img) => {
       if (icon.test(img.getAttribute("src") ?? "")) return;
       const { width, height } = img.getBoundingClientRect();
+      const p = personNear(img);
       const span = document.createElement("span");
-      span.textContent = initials;
+      span.textContent = p >= 0 ? people[p].split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() : initials;
       span.style.cssText =
         `display:inline-flex;align-items:center;justify-content:center;width:${width || 24}px;` +
-        `height:${height || 24}px;border-radius:50%;background:#1D2125;color:#fff;font:600 10px sans-serif`;
+        `height:${height || 24}px;border-radius:50%;background:${p >= 0 ? colours[p % colours.length] : "#1D2125"};` +
+        `color:#fff;font:600 10px sans-serif`;
       img.replaceWith(span);
     });
-  }, initials);
+  }, [initials, people] as const);
 }
 
 /** Hides small floating buttons pinned to the bottom-right corner (e.g. the Rovo button); lessons don't show them. */
@@ -140,36 +189,6 @@ export async function spotlight(
 }
 
 /**
- * Lesson-style pointer: a white curved arrow ending at the left edge of the target, coming from below-left
- * (default) or curling down from above. `offsetY` sets where on the target it points (default: middle).
- */
-export async function arrowTo(page: Page, target: Locator, opts: { from?: "below" | "above"; offsetY?: number } = {}) {
-  const r = await target.boundingBox();
-  if (!r) throw new Error("arrowTo: target is not visible");
-  await page.evaluate(([r, from, offsetY]) => {
-    const end = { x: r.x - 6, y: r.y + (offsetY ?? r.height / 2) };
-    const curve =
-      from === "above"
-        ? (() => {
-            const start = { x: end.x + 4, y: end.y - 75 };
-            return `M${start.x},${start.y} C${start.x - 45},${start.y + 10} ${end.x - 45},${end.y} ${end.x},${end.y}`;
-          })()
-        : (() => {
-            const start = { x: end.x - 120, y: end.y + 150 };
-            return `M${start.x},${start.y} C${start.x - 10},${end.y + 30} ${end.x - 70},${end.y} ${end.x},${end.y}`;
-          })();
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("data-screenshot-tweak", "arrow");
-    svg.setAttribute("style", "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:2147483647");
-    svg.innerHTML =
-      `<defs><marker id="st-head" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto">` +
-      `<path d="M0,0 L8,5 L0,10 Z" fill="#fff"/></marker></defs>` +
-      `<path d="${curve}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" marker-end="url(#st-head)"/>`;
-    document.body.appendChild(svg);
-  }, [r, opts.from ?? "below", opts.offsetY ?? null] as const);
-}
-
-/**
  * Lesson-style annotation with several highlighted areas: dims the page except each area and outlines each
  * one in orange (the single-area spotlight() can't leave more than one hole in the overlay).
  * An area can be several locators; it then covers all of them.
@@ -249,9 +268,9 @@ export async function markers(page: Page, items: Locator, direction: "down" | "l
   );
 }
 
-/** Replaces the names in one table column with neutral names (User A, User B...), the same name for the same person. */
-export async function neutralNames(page: Page, columnHeader: string) {
-  await page.evaluate((header) => {
+/** Replaces the names in one table column with fake names, the same name for the same person. */
+export async function fakeNames(page: Page, columnHeader: string, people = FAKE_PEOPLE) {
+  await page.evaluate(([header, people]) => {
     for (const table of Array.from(document.querySelectorAll("table"))) {
       const heads = Array.from(table.querySelectorAll("thead th")).map((th) => (th as HTMLElement).innerText.trim());
       const col = heads.findIndex((h) => h.startsWith(header));
@@ -264,10 +283,10 @@ export async function neutralNames(page: Page, columnHeader: string) {
         for (let n = walker.nextNode(); n; n = walker.nextNode()) {
           const real = n.nodeValue?.trim();
           if (!real) continue;
-          if (!names.has(real)) names.set(real, `User ${String.fromCharCode(65 + names.size)}`);
+          if (!names.has(real)) names.set(real, people[names.size % people.length]);
           n.nodeValue = names.get(real)!;
         }
       }
     }
-  }, columnHeader);
+  }, [columnHeader, people] as const);
 }

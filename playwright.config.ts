@@ -16,5 +16,8 @@ export default defineConfig({
     timezoneId: "UTC",
     // Signed-in session for the test account (see README: npm run login)
     storageState: "auth/state.json",
+    // Linux (CI) hints fonts by default, which makes text wider and heavier than on a Mac.
+    // Unhinted text keeps the font's own spacing, close to how learners see it on macOS.
+    launchOptions: { args: ["--font-render-hinting=none"] },
   },
 });

@@ -1,0 +1,97 @@
+// Lesson:  AUC-1748 - Use mission control to analyze and respond to Confluence site activity
+//          https://community.atlassian.com/learning/lesson/use-confluence-mission-control
+// Image:   #2, section "See high-level metrics in the overview."
+//          https://dam-cdn.atl.orangelogic.com/AssetLink/utt6s83q7w58keor70lk177t7y17245s.png
+// Recipe:  public.screenshot_recipes where asset_id = 'utt6s83q7w58keor70lk177t7y17245s'
+
+import { Page } from "@playwright/test";
+import { runRecipe } from "../lib/recipe";
+import { adminNav, openConfluenceAdmin } from "../lib/confluence";
+import { anonymize, FAKE_PEOPLE, fakeProfileNames, hideMessages, renameOrg, spotlightAreas } from "../lib/tweaks";
+
+const missionControlLink = (page: Page) => page.locator(`${adminNav} a[data-testid="admin-center"]`);
+// The bordered Overview card (h2 > title row > header > card)
+const overviewCard = (page: Page) => page.locator("h2", { hasText: "Overview" }).first().locator("xpath=ancestor::div[3]");
+// In edit mode each metric has a select ("Select metric to display in Overview section")
+const metricSelects = (page: Page) => page.getByRole("combobox", { name: "Select metric to display in Overview section" });
+const metricMenu = (page: Page) => page.getByRole("listbox");
+
+// The lesson image shows the dropdowns closed: the menu is opened in navigate() to read its groups and
+// options for the checks, then closed before the capture
+const menu = { groups: [] as string[], options: [] as string[] };
+
+
+runRecipe({
+  file: "AUC-1748-2",
+  assetId: "utt6s83q7w58keor70lk177t7y17245s",
+  title: "AUC-1748 #2 - Mission control overview in edit mode",
+  product: "confluence",
+
+  async navigate(page, s) {
+    await openConfluenceAdmin(page, s);
+    // Overview > Edit (never Save: the run ends with the page closed, nothing is kept)
+    await overviewCard(page).getByRole("button", { name: "Edit", exact: true }).click();
+    await metricSelects(page).first().waitFor();
+    // Open the first metric dropdown (the input itself is not clickable; its select control is)
+    await metricSelects(page).first().locator("xpath=ancestor::div[2]").click();
+    await metricMenu(page).waitFor();
+    menu.groups = (await page.locator('[id^="react-select-"][id$="-heading"]').allInnerTexts()).map((t) => t.trim().toLowerCase());
+    menu.options = (await page.getByRole("option").allInnerTexts()).map((t) => t.trim());
+    await page.keyboard.press("Escape");
+    await metricMenu(page).waitFor({ state: "hidden" });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); // no focus ring, as in the lesson
+  },
+
+  async tweak(page, s) {
+    await hideMessages(page, ["Your site now has roles"]);
+    // Fake names first, as in the lesson (Andrea Wilson, Orion Beck, Phil Mabrey); anonymize() then gives their pictures matching initials
+    await fakeProfileNames(page);
+    await anonymize(page, "AU", FAKE_PEOPLE);
+    await renameOrg(page, s.test_org, s.display_org_name);
+    // Opening the menu scrolls the content panel (smoothly, so it keeps moving for a moment after the menu
+    // closes); once it has settled, back to the top so the page title shows, as in the lesson
+    await page.waitForTimeout(1_500);
+    await page.locator("#AkMainContent").evaluate((m) => m.scrollTo({ top: 0, behavior: "instant" }));
+    await page.waitForTimeout(700);
+    // Two outlined areas: Mission control in the sidebar, and the Overview card in edit mode
+    await spotlightAreas(page, [missionControlLink(page), overviewCard(page)]);
+  },
+
+  // The banner and the metric numbers change over time
+  mask: (page) => [
+    page.locator('[data-testid="ga-space-roles-banner"]'),
+    overviewCard(page).locator('[data-testid="main-stat"], [data-testid="footer-container"]'),
+  ],
+
+  async checks(page, c) {
+    await c.check("Overview in edit mode shows Cancel and Save", async () => {
+      const card = overviewCard(page);
+      const cancel = await card.getByRole("button", { name: "Cancel", exact: true }).isVisible();
+      const save = await card.getByRole("button", { name: "Save", exact: true }).isVisible();
+      return { pass: cancel && save, detail: `Cancel ${cancel ? "present" : "missing"}, Save ${save ? "present" : "missing"}` };
+    });
+
+    await c.check("A dropdown above each metric: Total spaces, Total content, Confluence searches", async () => {
+      const values = await metricSelects(page).evaluateAll((inputs) =>
+        // The selected value is the element the input is described by
+        inputs.map((i) => document.getElementById(i.getAttribute("aria-describedby")?.split(" ")[0] ?? "")?.innerText.trim() ?? ""),
+      );
+      const expected = ["Total spaces", "Total content", "Confluence searches"];
+      const pass = JSON.stringify(values) === JSON.stringify(expected);
+      return { pass, detail: pass ? "Three dropdowns, same metrics" : `Now: ${values.join(", ") || "no dropdowns"}` };
+    });
+
+    await c.check("Metric dropdown groups: Activity, Content management, Feature usage, Security", async () => {
+      const groups = menu.groups;
+      const expected = ["activity", "content management", "feature usage", "security"];
+      const pass = JSON.stringify(groups) === JSON.stringify(expected);
+      return { pass, detail: pass ? "Same groups, same order" : `Now: ${groups.join(", ") || "no group headings"}` };
+    });
+
+    await c.check("Security metrics in the dropdown include Active public links and Public link views", async () => {
+      const options = menu.options;
+      const missing = ["Active public links", "Public link views"].filter((o) => !options.includes(o));
+      return { pass: !missing.length, detail: missing.length ? `Missing: ${missing.join(", ")}. Options: ${options.join(", ")}` : `${options.length} options, both present` };
+    });
+  },
+});
