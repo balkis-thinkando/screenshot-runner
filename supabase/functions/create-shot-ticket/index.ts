@@ -13,6 +13,8 @@
 //   issue_key       optional  rewrite the description of this existing ticket instead of creating one
 //   attach_only     optional  "true" with issue_key: only add the image(s) to that ticket
 //   ai_reviewed     optional  "true": the verdict came from the AI review; adds the ai-reviewed label
+//   ai_repaired     optional  "true": the script was repaired by AI to reach the screen; adds the ai-repaired label
+//   steps_changed   optional  how the path to the screen changed (plain text); adds a line before "What changed"
 //   dry_run         optional  "true": validate everything and return the payload, change nothing
 // Auth: service role key as Bearer, or a one-time token from public.mint_shot_ticket_token()
 // in the x-shot-token header (any valid project key as Bearer).
@@ -85,6 +87,8 @@ Deno.serve(async (req) => {
     const issueKey = String(form.get("issue_key") ?? "").trim();
     const dryRun = form.get("dry_run") === "true";
     const aiReviewed = form.get("ai_reviewed") === "true";
+    const aiRepaired = form.get("ai_repaired") === "true";
+    const stepsChanged = String(form.get("steps_changed") ?? "").replace(/\s+/g, " ").trim().slice(0, 500);
     const attachOnly = form.get("attach_only") === "true";
     const file = form.get("screenshot");
     const comparisonFile = form.get("comparison");
@@ -128,6 +132,7 @@ Deno.serve(async (req) => {
       content: [
         para(text("The product UI has changed, so this lesson screenshot needs replacing in Contentful. The new capture is attached.")),
         para(text("Lesson URL: "), link(alcat.web_url, alcat.web_url)),
+        ...(stepsChanged ? [para(text(`The steps to reach this screen have changed: ${stepsChanged}`))] : []),
         heading("What changed"),
         bullets(changes.map((c) => [text(c)])),
       ],
@@ -181,7 +186,7 @@ Deno.serve(async (req) => {
       project: { key: PROJECT },
       issuetype: { name: ISSUE_TYPE },
       summary: `${alcat.alcat_key} ${image}: update screenshot (${lesson?.title ?? "lesson"})`.slice(0, 250),
-      labels: ["screenshot-runner", label, verdict.replace("_", "-"), ...(aiReviewed ? ["ai-reviewed"] : [])],
+      labels: ["screenshot-runner", label, verdict.replace("_", "-"), ...(aiReviewed ? ["ai-reviewed"] : []), ...(aiRepaired ? ["ai-repaired"] : [])],
       [LEARNING_CONTENT]: [{ workspaceId: WORKSPACE_ID, id: `${WORKSPACE_ID}:${alcat.alcat_object_id}`, objectId: String(alcat.alcat_object_id) }],
       description,
     };
