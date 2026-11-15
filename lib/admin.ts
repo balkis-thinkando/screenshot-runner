@@ -49,9 +49,41 @@ export async function openOrgOverview(page: Page, s: Settings) {
 /** Opens an organization page from the sidebar: a section (e.g. "AI and Rovo"), then one of its items (e.g. "Access"). */
 export async function openOrgPage(page: Page, s: Settings, section: string, item: string, title: RegExp) {
   await openOrgOverview(page, s);
+  await goToOrgPage(page, section, item, title);
+}
+
+/** From any organization page, opens another one from the sidebar (no reload of Overview). */
+export async function goToOrgPage(page: Page, section: string, item: string, title: RegExp) {
   const nav = page.locator(sidebar);
-  await nav.getByRole("button", { name: section, exact: true }).or(nav.getByRole("link", { name: section, exact: true })).first().click();
-  await nav.getByRole("link", { name: item, exact: true }).first().click();
+  const link = nav.getByRole("link", { name: item, exact: true }).first();
+  // Clicking a section that is already open would close it
+  if (!(await link.isVisible())) {
+    await nav.getByRole("button", { name: section, exact: true }).or(nav.getByRole("link", { name: section, exact: true })).first().click();
+  }
+  await link.click();
   await page.locator("h1", { hasText: title }).waitFor();
   await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+}
+
+/** Icon of an app (e.g. "Confluence") as HTML, from the Atlassian apps page, for display-only fakes elsewhere. */
+export async function appIconHtml(page: Page, app: string) {
+  await goToOrgPage(page, "Apps", "Atlassian apps", /Atlassian apps/);
+  const icon = page.locator(`[data-testid="product-card-icon-container"]`).filter({ has: page.locator(`[aria-label="${app}"]`) }).first();
+  await icon.waitFor();
+  return icon.innerHTML();
+}
+
+/** Opens an organization page by its path (e.g. "ip-allowlists"), for pages nested deep in the sidebar. */
+export async function openOrgPath(page: Page, s: Settings, path: string, title: RegExp) {
+  if (!page.url().includes("admin.atlassian.com/o/")) await openOrgOverview(page, s);
+  const org = page.url().match(/\/o\/[0-9a-f-]+/)![0];
+  await page.goto(`https://admin.atlassian.com${org}/${path}`, { waitUntil: "commit" });
+  await page.locator("h1", { hasText: title }).waitFor({ timeout: 60_000 });
+  await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => {});
+  await page.waitForTimeout(1_500);
+}
+
+/** Sidebar link labels, trimmed, for checks. */
+export async function sidebarLabels(page: Page) {
+  return (await page.locator(`${sidebar} a, ${sidebar} button`).allInnerTexts()).map((t) => t.replace(/\s*New\s*$/, "").trim()).filter(Boolean);
 }
