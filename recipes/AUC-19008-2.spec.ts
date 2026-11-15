@@ -9,7 +9,7 @@
 
 import { runRecipe } from "../lib/recipe";
 import { openSignedIn } from "../lib/jira";
-import { answerText, chatPanel, keepAgentIcons, newRovoChat, sendPrompt } from "../lib/rovo";
+import { chatHistory, markChatHistory, chatPanel, keepAgentIcons, newRovoChat, sendPrompt } from "../lib/rovo";
 import { anonymize, fakeProfileNames, FAKE_PEOPLE, renameOrg, spotlight } from "../lib/tweaks";
 
 const PROMPT = "Suggest new work items for the remaining event tasks, and offer to create them";
@@ -37,11 +37,12 @@ runRecipe({
     await keepAgentIcons(page);
     await fakeProfileNames(page);
     await anonymize(page, "AU", FAKE_PEOPLE);
+    await markChatHistory(page, PROMPT);
     await spotlight(page, page.locator(chatPanel), { markers: false });
   },
 
-  // AI answer and board cards
-  mask: (page) => [answerText(page), page.locator('[data-testid*="platform-card"], [data-component-selector*="card"]')],
+  // The whole chat history (the AI answer differs on every run) and the board cards
+  mask: (page) => [chatHistory(page), page.locator('[data-testid*="platform-card"], [data-component-selector*="card"]')],
 
   async checks(page, c) {
     await c.check("Answer ends with things Rovo can do next (suggested actions)", async () => {

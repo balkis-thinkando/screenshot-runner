@@ -155,3 +155,19 @@ export async function sendPrompt(page: Page, prompt: string) {
 
 /** AI-written parts of the chat (the answer text), masked when comparing captures: they differ on every run. */
 export const answerText = (page: Page) => page.locator(`${chatPanel} :is(p, li, h1, h2, h3, h4, table, pre)`).filter({ hasNotText: /^(Uses AI|Describe what you want|Ask, @mention)/ });
+
+/**
+ * Marks the scrolling chat history (prompt and answer) so a recipe can mask all of it: the answer's length and
+ * wording change on every run, so masking its text blocks one by one still leaves differences between them.
+ */
+export async function markChatHistory(page: Page, prompt: string) {
+  await page.locator(chatPanel).getByText(prompt, { exact: true }).first().evaluate((el) => {
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const y = getComputedStyle(a).overflowY;
+      if ((y === "auto" || y === "scroll") && a.scrollHeight > a.clientHeight) return void a.setAttribute("data-screenshot-mask", "chat-history");
+    }
+    throw new Error("markChatHistory: no scrolling chat history found");
+  });
+}
+
+export const chatHistory = (page: Page) => page.locator('[data-screenshot-mask="chat-history"]');

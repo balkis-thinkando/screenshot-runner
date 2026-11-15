@@ -9,7 +9,7 @@
 
 import { runRecipe } from "../lib/recipe";
 import { hideSidebar, openConfluencePage, ROVO_PAGE } from "../lib/confluence";
-import { answerText, chatHeader, chatPanel, keepAgentIcons, newRovoChat, sendPrompt } from "../lib/rovo";
+import { chatHistory, markChatHistory, chatHeader, chatPanel, keepAgentIcons, newRovoChat, sendPrompt } from "../lib/rovo";
 import { anonymize, fakeProfileNames, FAKE_PEOPLE, renameOrg, spotlight } from "../lib/tweaks";
 
 const PROMPT = "Summarize this page";
@@ -38,10 +38,12 @@ runRecipe({
     await fakeProfileNames(page);
     await anonymize(page, "AU", FAKE_PEOPLE);
     await hideSidebar(page);
+    await markChatHistory(page, PROMPT);
     await spotlight(page, page.locator(chatPanel), { markers: false });
   },
 
-  mask: (page) => [answerText(page)],
+  // The whole chat history (the AI answer differs on every run) and the page view count in the byline
+  mask: (page) => [chatHistory(page), page.locator('[data-testid*="byline"]')],
 
   async checks(page, c) {
     await c.check("Ask Rovo opens Rovo Chat beside the page, with Rovo selected", async () => {
@@ -60,7 +62,7 @@ runRecipe({
     });
 
     await c.check("Answer is a summary with headings or text", async () => {
-      const n = await answerText(page).count();
+      const n = await chatHistory(page).locator("p, li, h1, h2, h3, h4").count();
       return { pass: n > 2, detail: `${n} text blocks` };
     });
 
