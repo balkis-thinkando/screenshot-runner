@@ -348,3 +348,30 @@ export async function setCount(page: Page, locator: Locator, text: string) {
     nodes.forEach((n, i) => (n.nodeValue = i === 0 ? text : ""));
   }, text);
 }
+
+/** Replaces the signed-in user's name and initials (profile button, owner fields, hover cards) with a fake person.
+ *  Works on any Atlassian page: the name comes from /gateway/api/me and is never printed. */
+export async function fakeSignedInUser(page: Page, fake: string) {
+  await page.evaluate(async (fake) => {
+    const me = await fetch("/gateway/api/me").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const name: string | undefined = me?.name;
+    if (!name) return;
+    const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+    const first = name.split(/\s+/)[0];
+    const fakeFirst = fake.split(" ")[0];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const v = n.nodeValue;
+      if (!v) continue;
+      if (v.includes(name)) n.nodeValue = v.replaceAll(name, fake);
+      else if (v.trim() === initials(name)) n.nodeValue = v.replace(initials(name), initials(fake));
+      else if (new RegExp(`\\b${first}\\b`).test(v) && v.trim().length < 40) n.nodeValue = v.replace(new RegExp(`\\b${first}\\b`, "g"), fakeFirst);
+    }
+    document.querySelectorAll("[aria-label],[title],img[alt]").forEach((el) => {
+      for (const a of ["aria-label", "title", "alt"]) {
+        const v = el.getAttribute(a);
+        if (v?.includes(name)) el.setAttribute(a, v.replaceAll(name, fake));
+      }
+    });
+  }, fake);
+}
