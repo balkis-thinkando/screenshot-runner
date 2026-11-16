@@ -39,7 +39,22 @@ runRecipe({
     await anonymize(page, "AW", FAKE_PEOPLE);
     await hideSidebar(page);
     await spotlight(page, explore(page), { markers: false });
+    // Rovo's suggestions under the greeting vary in number and wording, which moves the greeting and the options
+    // up or down: cover the panel from below its header to above the context chip (transparent, for the mask)
+    const panel = await page.locator(chatPanel).boundingBox();
+    const ctx = await page.locator(chatPanel).getByText(/Context:?/).first().boundingBox();
+    if (panel && ctx) {
+      await page.evaluate(([p, c]) => {
+        const d = document.createElement("div");
+        d.dataset.screenshotMask = "rovo-suggestions";
+        Object.assign(d.style, { position: "fixed", left: `${p.x}px`, width: `${p.width}px`, top: `${p.y + 60}px`, height: `${c.y - p.y - 70}px`, opacity: "0", pointerEvents: "none" });
+        document.body.appendChild(d);
+      }, [panel, ctx] as const);
+    }
   },
+
+  // "Edited 2h ago" (or "Saved") in the header changes on every run; Rovo's suggestions vary (see tweak)
+  mask: (page) => [page.getByText(/^(Edited .+ ago|Saved)$/), page.locator('[data-screenshot-mask="rovo-suggestions"]')],
 
   async checks(page, c) {
     await c.check("Whiteboard title, Edited time, Share and link buttons", async () => {
