@@ -78,6 +78,9 @@ runRecipe({
     }
   },
 
+  // "Edited 2h ago" (or "Saved") in the header changes on every run
+  mask: (page) => [page.getByText(/^(Edited .+ ago|Saved)$/)],
+
   async checks(page, c) {
     await c.check("Whiteboard title in the header", async () => {
       const title = await page.getByText(ROVO_WHITEBOARD.title).evaluateAll((es) => es.some((e) => e.getBoundingClientRect().width > 0));
