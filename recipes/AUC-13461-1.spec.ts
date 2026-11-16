@@ -6,7 +6,7 @@
 // Asks Rovo for request type suggestions in IT Support (ITS) and selects one. Create is never clicked.
 // The suggestions are written by AI and change from run to run, so they are masked.
 
-import { Page } from "@playwright/test";
+import { Page, test } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { openSignedIn } from "../lib/jira";
 import { anonymize, FAKE_PEOPLE, renameOrg, spotlightAreas } from "../lib/tweaks";
@@ -28,6 +28,8 @@ runRecipe({
   product: "jira",
 
   async navigate(page, s) {
+    // Rovo can take minutes to answer: the default 120s limit killed the test before it was recorded
+    test.setTimeout(240_000);
     await openSignedIn(page, s, "/jira/servicedesk/projects/ITS/settings/request-types");
     await page.locator(createButton).waitFor({ timeout: 60_000 });
     await page.waitForTimeout(3_000);
@@ -50,10 +52,19 @@ runRecipe({
     await anonymize(page, "AU", FAKE_PEOPLE);
     // The lesson also shows the Create request type menu; it closes when the prompt opens, so outline the button
     await spotlightAreas(page, [page.locator(createButton), panel(page)]);
+    // Rovo returns a varying number of suggestions, so everything below the prompt moves. Cover it with a
+    // transparent box (invisible in the capture) for the mask: from the first suggestion to the bottom of the screen.
+    const top = await panel(page).getByText(/pre-configured request types/).first().evaluate((el) => el.getBoundingClientRect().top - 4);
+    await page.evaluate((y) => {
+      const d = document.createElement("div");
+      d.dataset.screenshotMask = "rovo-suggestions";
+      Object.assign(d.style, { position: "fixed", left: "360px", right: "40px", top: `${y}px`, bottom: "0", opacity: "0", pointerEvents: "none", zIndex: "2147483647" });
+      document.body.appendChild(d);
+    }, top);
   },
 
-  // AI-written suggestions
-  mask: (page) => [page.locator('[role="main"] label:has(input[type="radio"])'), page.getByText(PROMPT, { exact: true }).locator("xpath=following::*[.//input[@type='radio']][1]")],
+  // AI-written suggestions and everything they push down (see tweak)
+  mask: (page) => [page.locator('[data-screenshot-mask="rovo-suggestions"]')],
 
   async checks(page, c) {
     await c.check("Page 'Service requests' in IT Support space settings", async () => {

@@ -9,6 +9,7 @@ import { openOrgPage, sidebarLabels } from "../lib/admin";
 import { anonymize, renameOrg, spotlight } from "../lib/tweaks";
 
 const rovoDev = '[data-testid^="workspaces-table--row"]:has([aria-label="Rovo Dev"])';
+const manageApp = '[aria-label="Manage app"], button:has-text("Manage app")';
 
 runRecipe({
   file: "AUC-12979-1",
@@ -19,6 +20,10 @@ runRecipe({
   async navigate(page, s) {
     await openOrgPage(page, s, "Apps", "Atlassian apps", /Atlassian apps/);
     await page.locator('[data-testid^="workspaces-table--row"]').first().waitFor({ timeout: 30_000 });
+    // Rows render greyed out while the app details load; the Manage app button appears when they are done.
+    // If it never appears, the Rovo Dev check below reports it.
+    await page.locator(rovoDev).locator(manageApp).first().waitFor({ timeout: 45_000 }).catch(() => {});
+    await page.waitForTimeout(1_500);
   },
 
   async tweak(page, s) {
@@ -62,7 +67,7 @@ runRecipe({
     await c.check("Rovo Dev is listed, with its rovodev URL and an app link", async () => {
       const row = page.locator(rovoDev);
       const text = (await row.count()) ? await row.innerText() : "";
-      const manage = (await row.locator('[aria-label="Manage app"], button:has-text("Manage app")').count()) > 0;
+      const manage = (await row.locator(manageApp).count()) > 0;
       return { pass: /\/rovodev/.test(text) && manage, detail: text ? `Row found; Manage app: ${manage}` : "No Rovo Dev row" };
     });
   },
