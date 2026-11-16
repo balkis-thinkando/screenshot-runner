@@ -76,3 +76,16 @@ export async function openConfluencePage(page: Page, s: Settings, space: string,
 
 /** The page used for Rovo shots: a long SyncUp page with text, an info panel and a table (no people pictured). */
 export const ROVO_PAGE = { space: "SyncUp", id: "2130015", title: "Engineering onboarding guide" };
+
+/** Test data for the AUC-14381 whiteboard shots: a Rovo-made brainstorming board in SyncUp (created 16 Nov 2026,
+ *  owner OK) with a mind map, a column of sticky notes and a "Brainstorming Best Practices" frame. Rovo's
+ *  "This content was created with Rovo!" banner does not show to the test account, so it is not checked. */
+export const ROVO_WHITEBOARD = { space: "SyncUp", id: "9895962", title: "Product Development and UX Brainstorming Mindmap" };
+
+/** Opens the test whiteboard. The canvas draws lazily, so wait until the board has had time to paint. */
+export async function openWhiteboard(page: Page, s: Settings) {
+  const url = `${s.test_site}/wiki/spaces/${ROVO_WHITEBOARD.space}/whiteboard/${ROVO_WHITEBOARD.id}`;
+  await open(page, `https://id.atlassian.com/login?continue=${encodeURIComponent(url)}`, page.getByText(ROVO_WHITEBOARD.title, { exact: true }).first(), `whiteboard ${ROVO_WHITEBOARD.id}`);
+  await page.locator("canvas").first().waitFor({ timeout: 30_000 }).catch(() => {});
+  await page.waitForTimeout(10_000);
+}
