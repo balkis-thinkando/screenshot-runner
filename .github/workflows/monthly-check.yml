@@ -11,6 +11,11 @@
 # creates a SHOT work item (label ai-reviewed) when a new screenshot is needed. Tick "ai_dry_run" to see
 # the AI verdicts without updating Supabase or creating tickets.
 #
+# When a screenshot still cannot be captured (screen not reached and not repaired, blocked for a reason other
+# than an expired sign-in, or the test crashed or timed out), scripts/manual-tickets.mjs creates a SHOT work
+# item (label manual-capture) asking for it to be captured by hand, with the recipe's steps. "ai_dry_run" covers
+# it too.
+#
 # When a script cannot reach its screen, scripts/ai-repair.mjs has Claude fix the script and tests it on the
 # test site (3 attempts per script, 5 scripts per run). A working fix is reviewed like any capture, creates a
 # SHOT work item (label ai-repaired) when needed and is opened as a pull request for you to review; it is
@@ -147,6 +152,12 @@ jobs:
           AI_REPAIR_DRY_RUN: ${{ inputs.ai_dry_run || false }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ai-repair.mjs
+
+      - name: Manual-capture tickets for screenshots that could not be captured
+        if: ${{ !cancelled() && env.UPDATE_BASELINES != 'true' }}
+        env:
+          AI_REVIEW_DRY_RUN: ${{ inputs.ai_dry_run || false }}
+        run: node scripts/manual-tickets.mjs
 
       - name: Summary
         if: always()
