@@ -5,10 +5,11 @@
 //
 // POST multipart/form-data:
 //   asset_id        required  Orange Logic asset ID of the lesson image (screenshot_recipes.asset_id)
-//   verdict         required  material | steps_broken
+//   verdict         required  material | steps_broken | manual_capture (the runner could not capture the screen:
+//                             no screenshot needed; changes = why, then how to capture it, one line each)
 //   changes         required  UI changes vs the lesson image, plain text, one per line (include any
 //                             lesson text or labelled graphic that needs updating too)
-//   screenshot      required  PNG file (the new capture), except with issue_key
+//   screenshot      required  PNG file (the new capture), except with issue_key or manual_capture
 //   comparison      optional  PNG: side-by-side of the current lesson image and the new capture, attached too
 //   issue_key       optional  rewrite the description of this existing ticket instead of creating one
 //   attach_only     optional  "true" with issue_key: only add the image(s) to that ticket
@@ -28,7 +29,7 @@ const ISSUE_TYPE = "Task";
 const LEARNING_CONTENT = "customfield_13178";
 const WORKSPACE_ID = "5f82c31c-7c7d-440b-887a-530eb23c1930";
 const ASSETS = `https://api.atlassian.com/jsm/assets/workspace/${WORKSPACE_ID}/v1`;
-const VERDICTS = ["material", "steps_broken"];
+const VERDICTS = ["material", "steps_broken", "manual_capture"];
 
 const jwtRole = (t: string) => {
   try {
@@ -99,7 +100,7 @@ Deno.serve(async (req) => {
     if (file instanceof File) {
       png = new Uint8Array(await file.arrayBuffer());
       if (png[0] !== 0x89 || png[1] !== 0x50) return Response.json({ error: "screenshot must be a PNG" }, { status: 400 });
-    } else if (!issueKey || attachOnly) {
+    } else if ((!issueKey && verdict !== "manual_capture") || attachOnly) {
       return Response.json({ error: "screenshot file is required" }, { status: 400 });
     }
     let comparison: Uint8Array | null = null;
@@ -125,8 +126,23 @@ Deno.serve(async (req) => {
     const label = `asset-${assetId}`;
     const image = shot ? `image ${shot.position}` : "image";
 
+    const manual = verdict === "manual_capture";
+    // Manual capture: the first line says why the runner could not capture it, the rest how to capture it
+    const manualDescription = {
+      type: "doc",
+      version: 1,
+      content: [
+        para(text("The screenshot runner could not capture this lesson screenshot automatically. Please capture it by hand and replace it in Contentful if the UI has changed.")),
+        para(text("Lesson URL: "), link(alcat.web_url, alcat.web_url)),
+        para(text("Current lesson image: "), link(recipe.image_url, recipe.image_url)),
+        heading("Why it was not captured"),
+        bullets(changes.slice(0, 1).map((c) => [text(c.replace(/^Why it could not be captured automatically:\s*/i, ""))])),
+        ...(changes.length > 1 ? [heading("How to capture it"), bullets(changes.slice(1).map((c) => [text(c)]))] : []),
+      ],
+    };
+
     // Description template agreed with the owner (5 Nov 2026)
-    const description = {
+    const description = manual ? manualDescription : {
       type: "doc",
       version: 1,
       content: [
@@ -185,7 +201,7 @@ Deno.serve(async (req) => {
     const fields = {
       project: { key: PROJECT },
       issuetype: { name: ISSUE_TYPE },
-      summary: `${alcat.alcat_key} ${image}: update screenshot (${lesson?.title ?? "lesson"})`.slice(0, 250),
+      summary: `${alcat.alcat_key} ${image}: ${manual ? "capture screenshot by hand" : "update screenshot"} (${lesson?.title ?? "lesson"})`.slice(0, 250),
       labels: ["screenshot-runner", label, verdict.replace("_", "-"), ...(aiReviewed ? ["ai-reviewed"] : []), ...(aiRepaired ? ["ai-repaired"] : [])],
       [LEARNING_CONTENT]: [{ workspaceId: WORKSPACE_ID, id: `${WORKSPACE_ID}:${alcat.alcat_object_id}`, objectId: String(alcat.alcat_object_id) }],
       description,
@@ -197,7 +213,7 @@ Deno.serve(async (req) => {
         status: "dry_run",
         learning_content: { objectId: alcat.alcat_object_id, label: assetObj.label, objectKey: assetObj.objectKey },
         permissions: Object.fromEntries(Object.entries(perms.permissions).map(([k, v]) => [k, (v as { havePermission: boolean }).havePermission])),
-        screenshot_bytes: png!.length,
+        screenshot_bytes: png?.length ?? 0,
         fields,
       });
     }
@@ -208,13 +224,15 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ fields }),
     });
 
-    let attached = true;
+    let attached = !!png;
     let attachError: string | null = null;
-    try {
-      await attach(created.key);
-    } catch (e) {
-      attached = false;
-      attachError = String(e);
+    if (png) {
+      try {
+        await attach(created.key);
+      } catch (e) {
+        attached = false;
+        attachError = String(e);
+      }
     }
 
     return Response.json({ status: "created", key: created.key, url: `${JIRA}/browse/${created.key}`, attached, attach_error: attachError });
