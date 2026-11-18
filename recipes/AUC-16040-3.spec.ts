@@ -4,10 +4,14 @@
 //          https://dam-cdn.atl.orangelogic.com/AssetLink/1e7i6k4ep4wdm0tpw3643li1k3hj261c.png
 // Recipe:  public.screenshot_recipes where asset_id = '1e7i6k4ep4wdm0tpw3643li1k3hj261c'
 // Insights > Platform usage is now Usage > Meters. The checks describe the lesson image, so they flag the change.
+// Display-only fake (lib/fake-usage.ts): meters that look empty (under 5% of their allowance, or 0) get plausible
+// usage, with Allowance used bars to match. Rovo credits uses the same figures as the Rovo credits page
+// (AUC-16040-4): 53% of the allowance. Nothing is saved to the site.
 
 import { runRecipe } from "../lib/recipe";
 import { openOrgPage, sidebarLabels } from "../lib/admin";
 import { anonymize, renameOrg, spotlightAreas } from "../lib/tweaks";
+import { fakeMetersTable } from "../lib/fake-usage";
 
 runRecipe({
   file: "AUC-16040-3",
@@ -26,6 +30,8 @@ runRecipe({
     await page.mouse.move(1279, 799);
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page);
+    // Empty usage: plausible figures (rows with real usage are left alone)
+    await fakeMetersTable(page);
     // Title, description and table in one outlined area, as in the lesson
     await spotlightAreas(page, [[page.locator("h1").first(), page.locator("table").first()]]);
   },

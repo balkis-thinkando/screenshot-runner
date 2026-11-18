@@ -3,10 +3,14 @@
 // Image:   #2, section "What is Atlassian Administration?"
 //          https://dam-cdn.atl.orangelogic.com/AssetLink/5bph3ptlw74w0622n11j2040iotd1ao5.png
 // Recipe:  public.screenshot_recipes where asset_id = '5bph3ptlw74w0622n11j2040iotd1ao5'
+// Display-only fake (lib/fake-usage.ts): the test org has almost no usage, so when the Monitor cards look empty
+// the Rovo credits usage card gets a 7-day daily and cumulative line at the same pace as the Rovo credits page
+// (AUC-16040-4), and Open requests for app access gets a few requests per app. Nothing is saved to the site.
 
 import { runRecipe } from "../lib/recipe";
 import { openOrgOverview, sidebar } from "../lib/admin";
 import { renameOrg, anonymize, hideMessages } from "../lib/tweaks";
+import { fakeOverviewRequests, fakeOverviewRovo } from "../lib/fake-usage";
 
 runRecipe({
   file: "AUC-330-2",
@@ -20,6 +24,9 @@ runRecipe({
     await hideMessages(page, ["We decluttered the left navigation"]);
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page);
+    // Empty Monitor charts: draw a realistic scenario (skipped when the site has real usage)
+    await fakeOverviewRovo(page);
+    await fakeOverviewRequests(page);
   },
 
   // Chart values and counts change daily; ignore them when comparing to the baseline
