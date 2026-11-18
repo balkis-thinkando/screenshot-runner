@@ -9,6 +9,7 @@
 // differ on every run, so they are masked and only the structure is checked.
 
 import { Page, test } from "@playwright/test";
+import sharp from "sharp";
 import { runRecipe } from "../lib/recipe";
 import { openConfluencePage, ROVO_PAGE } from "../lib/confluence";
 import { chatPanel, keepAgentIcons, newRovoChat, sendPrompt } from "../lib/rovo";
@@ -21,6 +22,31 @@ const PROMPT =
   "The steps are: Development, Code review, QA testing in staging, Approval, Production. QA starts testing once code review passes and the release branch is in staging. " +
   "Draw it now without asking questions.";
 const preview = (page: Page) => page.getByRole("dialog").filter({ hasText: /Only visible to you/i }).last();
+
+/** Waits (up to 90 s) until the upper 75% of the preview board is no longer blank: at least 0.5% non-white pixels. */
+async function waitForDiagram(page: Page) {
+  const board = preview(page).locator("iframe").first();
+  await board.waitFor({ timeout: 60_000 });
+  // While "Loading your preview" shows, the page behind it shows through and would count as a drawing
+  await preview(page).getByText(/Loading your preview/i).waitFor({ state: "hidden", timeout: 120_000 }).catch(() => {});
+  await page.waitForTimeout(3_000);
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const box = await board.boundingBox();
+    if (box) {
+      const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: box.width, height: box.height * 0.75 } });
+      const { data, info } = await sharp(png).greyscale().raw().toBuffer({ resolveWithObject: true });
+      let ink = 0;
+      for (const v of data) if (v < 230) ink++;
+      if (ink / (info.width * info.height) > 0.005) {
+        await page.waitForTimeout(2_000); // let the last shapes and connectors finish drawing
+        return;
+      }
+    }
+    await page.waitForTimeout(2_000);
+  }
+  // Still blank: capture anyway, the checks and the AI review will report it
+}
 
 runRecipe({
   file: "AUC-14381-1",
@@ -38,8 +64,10 @@ runRecipe({
     await open.waitFor({ timeout: 180_000 });
     await open.click();
     await preview(page).getByRole("button", { name: "Add to Confluence" }).waitFor({ timeout: 60_000 });
-    await page.waitForTimeout(8_000); // the whiteboard preview draws after the dialog opens
     await page.mouse.move(1279, 799);
+    // The whiteboard preview draws after the dialog opens, sometimes a minute later: a fixed wait captured a
+    // blank board (18 Nov 2026). Wait until the preview's canvas area has a drawing in it.
+    await waitForDiagram(page);
   },
 
   async tweak(page, s) {
