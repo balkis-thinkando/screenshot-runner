@@ -89,18 +89,25 @@ export function runRecipe(r: Recipe) {
 
     if (!failedStep) {
 
-      // Compare with the last approved capture, ignoring dynamic areas. With no baseline yet, Playwright
-      // writes one without throwing, so a first run must not count as a match.
+      // Compare with the last approved capture, ignoring dynamic areas.
+      // A new recipe has no baseline yet. Outside a baseline update, skip the comparison: Playwright would
+      // fail the test with "A snapshot doesn't exist" and not retry it, so the run would never be recorded
+      // and the manual-capture step would take it for a crash. It counts as a difference instead.
       const hasBaseline = existsSync(info.snapshotPath(`${r.file}.png`));
-      try {
-        await expect(page).toHaveScreenshot(`${r.file}.png`, {
-          mask: r.mask?.(page) ?? [],
-          clip: r.clip,
-          maxDiffPixelRatio: 0.002,
-        });
-        baselineMatch = hasBaseline;
-      } catch {
+      const updating = info.config.updateSnapshots === "all"; // --update-snapshots
+      if (!hasBaseline && !updating) {
         baselineMatch = false;
+      } else {
+        try {
+          await expect(page).toHaveScreenshot(`${r.file}.png`, {
+            mask: r.mask?.(page) ?? [],
+            clip: r.clip,
+            maxDiffPixelRatio: 0.002,
+          });
+          baselineMatch = hasBaseline;
+        } catch {
+          baselineMatch = false;
+        }
       }
       if (!checks.allPassed || !baselineMatch) verdict = "needs_review";
     }
