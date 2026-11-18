@@ -9,7 +9,7 @@
 // buttons and the follow-up box are. The lesson image shows a real person's name in a result byline: every
 // person on the page gets a fake name. The AI text and the results are masked.
 
-import { Page } from "@playwright/test";
+import { Page, test } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { answerCard, answerHeading, fakePersonalSpaces, hideRovoNudge, searchBox, openSearchPage, searchInput, waitForAnswer } from "../lib/b2-search";
 import { anonymize, fakeProfileNames, fakeSignedInUser, FAKE_PEOPLE, renameOrg, spotlightAreas } from "../lib/tweaks";
@@ -25,6 +25,8 @@ runRecipe({
   product: "confluence",
 
   async navigate(page, s) {
+    // Rovo answer, Show more and scroll can exceed the default 120s in CI (no result was recorded in run #36)
+    test.setTimeout(240_000);
     await openSearchPage(page, s, QUERY);
     await waitForAnswer(page);
     await answerCard(page).getByRole("button", { name: "Show more" }).click();
