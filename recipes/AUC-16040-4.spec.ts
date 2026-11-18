@@ -4,10 +4,14 @@
 //          https://dam-cdn.atl.orangelogic.com/AssetLink/f8j7uw5b374w84o042dn0wh5aqvx45hi.png
 // Recipe:  public.screenshot_recipes where asset_id = 'f8j7uw5b374w84o042dn0wh5aqvx45hi'
 // Insights > Platform usage is now Usage > Meters; Rovo credits opens from its row.
+// Display-only fake (lib/fake-usage.ts): when usage looks empty (under 5% of the allowance), Monthly average,
+// Allowance used (53%, same as AUC-16040-3), Credits this period and the Daily / Cumulative credits lines show a
+// realistic month so far (busy weekdays, quiet weekends). Nothing is saved to the site.
 
 import { runRecipe } from "../lib/recipe";
 import { openOrgPage, sidebar, sidebarLabels } from "../lib/admin";
 import { anonymize, hideMessages, renameOrg, spotlightAreas } from "../lib/tweaks";
+import { fakeRovoCreditsDetail } from "../lib/fake-usage";
 
 runRecipe({
   file: "AUC-16040-4",
@@ -29,6 +33,8 @@ runRecipe({
     await hideMessages(page, ["Prepare for usage-based billing"]);
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page);
+    // Empty usage: a realistic period so far (skipped when the site has real usage)
+    await fakeRovoCreditsDetail(page);
     // Sidebar item, the Usage tab, and the usage cards below it
     const usageTab = page.getByRole("tab", { name: "Usage", exact: true });
     // The deepest block holding both the summary cards and the credits chart
