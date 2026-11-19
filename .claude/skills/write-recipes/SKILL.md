@@ -116,4 +116,5 @@ Give the exact `product` string in a code block on its own line: owners copy it 
 - Rovo answers vary: mask the text, check the frame (headings, buttons, footer).
 - The test account sees the old Studio layout; Studio helpers are in `lib/studio.ts`.
 - If a lesson object does not exist on the site (a named whiteboard, page or space), use the closest real one as a stand-in and say so in the header comment and the row's `notes`.
+- Flags, onboarding spotlights and known nuisance banners (e.g. "Your browser settings are slowing down your whiteboard", which only shows on the Linux CI runner) are hidden display-only in every recipe by `hideNoise()` in `lib/noise.ts`. Add new banner texts to `NOISE_TEXTS` there. Dialogs and menus a recipe opens on purpose are not touched; set `keepPopups: true` on a recipe whose lesson shows a flag or spotlight.
 - Background agents can leave shells running; check `pgrep -fl playwright` before your own test run.

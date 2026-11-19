@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { db, settings, Settings } from "./supabase";
 import { anonymize, hideFloatingButtons } from "./tweaks";
+import { hideNoise } from "./noise";
 
 export type CheckResult = { check: string; result: "pass" | "fail"; detail: string };
 
@@ -35,6 +36,7 @@ export type Recipe = {
   checks: (page: Page, c: Checks, s: Settings) => Promise<void>;
   mask?: (page: Page) => Locator[]; // dynamic areas ignored when comparing to the baseline
   clip?: { x: number; y: number; width: number; height: number }; // capture only this part of the window
+  keepPopups?: boolean; // true when the lesson shows a flag, spotlight or banner that hideNoise() would hide
 };
 
 /**
@@ -74,8 +76,13 @@ export function runRecipe(r: Recipe) {
     if (!failedStep) {
       try {
         await hideFloatingButtons(page);
+        // Flags, onboarding spotlights and known banners (lib/noise.ts): before the tweaks, and again just
+        // before the capture for any that appeared late
+        const noise = r.keepPopups ? [] : await hideNoise(page);
         await r.tweak(page, s);
         await r.checks(page, checks, s);
+        if (!r.keepPopups) noise.push(...(await hideNoise(page)));
+        if (noise.length) console.log(`${r.file}: hid ${noise.join("; ")}`);
         // Capture for the ticket / AI review
         capturePath = info.outputPath(`${r.file}.png`);
         await page.screenshot({ path: capturePath, clip: r.clip });
