@@ -187,7 +187,30 @@ export async function spotlight(
         const y = text.top + text.height / 2;
         const x = text.right + 10;
         const length = lineLengths[i % lineLengths.length];
-        add(`left:${x}px;top:${y - 1.5}px;width:${box.right + length - x}px;height:3px;background:${orange}`);
+        // The line skips any badge or icon it would cross further along the item ("Usage ... New"), so the
+        // badge stays readable
+        const end = box.right + length;
+        // The badge can sit next to the link rather than inside it: look at the whole row
+        const row = el.closest<HTMLElement>('li, [role="listitem"]') ?? el.parentElement ?? el;
+        const gaps = Array.from(row.querySelectorAll<HTMLElement>("*"))
+          .filter((c) => {
+            const st = getComputedStyle(c);
+            const r = c.getBoundingClientRect();
+            // Only a visible badge, drawn on its own (text or background), inside the outlined box
+            const drawn = !!c.innerText?.trim() || (st.backgroundColor !== "rgba(0, 0, 0, 0)" && st.backgroundColor !== "transparent");
+            return drawn && st.visibility === "visible" && Number(st.opacity) > 0.1 && r.width > 0 && r.width < 120 &&
+              r.left > x + 4 && r.right <= box.right && r.top < y && r.bottom > y && !c.contains(el) && !el.contains(c);
+          })
+          .map((c) => c.getBoundingClientRect())
+          .map((r) => [r.left - 4, r.right + 4] as const)
+          .sort((a, b) => a[0] - b[0]);
+        let from = x;
+        for (const [l, r] of gaps) {
+          if (r <= from) continue;
+          if (l > from) add(`left:${from}px;top:${y - 1.5}px;width:${l - from}px;height:3px;background:${orange}`);
+          from = Math.max(from, r);
+        }
+        if (end > from) add(`left:${from}px;top:${y - 1.5}px;width:${end - from}px;height:3px;background:${orange}`);
         add(`left:${x - 6}px;top:${y - 6}px;width:12px;height:12px;border-radius:50%;background:${orange};box-shadow:0 0 0 2px #fff`);
       });
     },

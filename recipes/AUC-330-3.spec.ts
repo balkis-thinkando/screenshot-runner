@@ -8,6 +8,7 @@
 import { runRecipe } from "../lib/recipe";
 import { openOrgOverview, sidebar, orgSwitcher } from "../lib/admin";
 import { renameOrg, anonymize, hideMessages, spotlight } from "../lib/tweaks";
+import { fakeOverviewRequests, fakeOverviewRovo } from "../lib/fake-usage";
 
 // Sidebar menu items, without the organization switcher above them
 const navItems = `${sidebar} a, ${sidebar} button:not(${orgSwitcher})`;
@@ -24,6 +25,10 @@ runRecipe({
     await hideMessages(page, ["We decluttered the left navigation"]);
     await renameOrg(page, s.test_org, s.display_org_name);
     await anonymize(page);
+    // Same display-only Monitor data as AUC-330-2 (lib/fake-usage.ts), so the dimmed page behind the sidebar
+    // looks like a real organization, as in the lesson
+    await fakeOverviewRovo(page);
+    await fakeOverviewRequests(page);
     await spotlight(page, navItems);
   },
 

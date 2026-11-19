@@ -68,7 +68,10 @@ export async function fakeOverviewRovo(page: Page) {
   const card = page.locator('[data-testid="overview-ai-credit"]').first();
   const shown = toNumber(await card.locator('h2[data-testid="avc-chart-summary-value"]').first().innerText());
   const weekPace = (ROVO.defaultAllowance * ROVO.monthlyShare * 7) / 30;
-  if (shown >= weekPace * EMPTY_SHARE) return false;
+  // Already faked by an earlier call (the headline then shows the fake total): redraw again, the chart may have
+  // re-rendered since
+  const faked = (await card.getAttribute("data-fake-rovo")) === "1";
+  if (!faked && shown >= weekPace * EMPTY_SHARE) return false;
 
   const today = new Date(new Date().toISOString().slice(0, 10));
   const start = new Date(today.getTime() - 6 * 86_400_000);
@@ -78,47 +81,70 @@ export async function fakeOverviewRovo(page: Page) {
     return Math.round((((ROVO.defaultAllowance * ROVO.monthlyShare) / 30) * dayWeight(d)) / meanWeight);
   });
   const cum = cumulative(daily);
-  // The chart re-renders whenever its layout changes (wider y labels, one-line dates), which resets what was
-  // drawn. Every step below is idempotent, so it repeats until a second later everything is still in place.
-  for (let pass = 0; pass < 5; pass++) {
-    await card.evaluate(
-      (el, [total]) => {
-        const fmtK = (n: number) => (n < 1000 ? String(n) : `${+(n / 1000).toFixed(2)}K`);
-        el.querySelector('h2[data-testid="avc-chart-summary-value"]')!.textContent = total.toLocaleString("en-US");
-        // The page sizes each date label to ~16px, so "Nov 12" wraps to "N / ov / 12" (also without the fake).
-        // Let each label take its own width on one line; translateX(-50%) keeps it centred on its tick.
-        for (const d of Array.from(el.querySelectorAll('[data-axis-type="axis-bottom"] [aria-hidden="true"]')) as HTMLElement[]) {
-          d.style.width = "max-content";
-          d.style.whiteSpace = "nowrap";
-        }
-        // Linear y-axis: keep the tick positions, relabel them to a round maximum above the cumulative total
-        const ticks = Array.from(el.querySelectorAll('[data-axis-type="axis-left"] span')) as HTMLElement[];
-        const topOf = (s: HTMLElement) => parseFloat((s.closest('[style*="top: calc"]') as HTMLElement).style.top.match(/calc\(([\d.]+)px/)![1]);
-        const pos = ticks.map(topOf);
-        const h = Math.max(...pos);
-        const steps = ticks.length - 1;
-        const raw = total / steps;
-        const mag = 10 ** Math.floor(Math.log10(raw));
-        const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw)!;
-        const max = step * steps;
-        ticks.forEach((t, i) => (t.textContent = fmtK(Math.round(((h - pos[i]) / h) * max))));
-      },
-      [cum[6]] as const,
-    );
-    await redrawLines(page, card, [["categorical-1", daily], ["categorical-2", cum]]);
-    await page.waitForTimeout(1_000);
-    const settled = await card.evaluate((el) => {
-      const ticks = Array.from(el.querySelectorAll('[data-axis-type="axis-left"] span')).map((t) => t.textContent!.trim());
-      const dates = Array.from(el.querySelectorAll('[data-axis-type="axis-bottom"] [aria-hidden="true"]')) as HTMLElement[];
-      const line = el.querySelector("svg path[stroke]");
-      return (
-        ticks.every((t) => t === "0" || t.endsWith("K")) &&
-        dates.every((d) => d.style.whiteSpace === "nowrap") &&
-        !!line && line.getAttribute("d") === line.getAttribute("data-fake-d")
-      );
-    });
-    if (settled) break;
-  }
+  // Since 19 Nov 2026 the chart re-renders continuously and resets any edit made inside it, so the fake is a
+  // separate layer drawn over the chart area (same place, size, colours and font). The page cannot reset it.
+  const labels = Array.from({ length: 7 }, (_, i) =>
+    new Date(start.getTime() + i * 86_400_000).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+  );
+  await card.evaluate(
+    (el, [daily, cum, labels]) => {
+      el.querySelector('h2[data-testid="avc-chart-summary-value"]')!.textContent = cum[cum.length - 1].toLocaleString("en-US");
+      document.querySelector('[data-screenshot-tweak="fake-rovo-chart"]')?.remove();
+      // Chart area: the y axis, the x axis and the plot
+      const parts = ['[data-axis-type="axis-left"]', '[data-axis-type="axis-bottom"]', "svg"]
+        .flatMap((sel) => Array.from(el.querySelectorAll<HTMLElement>(sel)))
+        .map((e) => e.getBoundingClientRect())
+        .filter((r) => r.width > 20 && r.height > 20);
+      if (!parts.length) return;
+      const left = Math.min(...parts.map((r) => r.left)) - 4;
+      const top = Math.min(...parts.map((r) => r.top)) - 8;
+      // Up to the card's inner edge: the real date labels can stick out past the plot
+      const right = Math.max(Math.max(...parts.map((r) => r.right)) + 4, el.getBoundingClientRect().right - 16);
+      const bottom = Math.max(...parts.map((r) => r.bottom)) + 4;
+      const w = right - left;
+      const h = bottom - top;
+      const cs = getComputedStyle(el);
+      let bg = cs.backgroundColor;
+      for (let a: Element | null = el as Element; a && (bg === "rgba(0, 0, 0, 0)" || bg === "transparent"); a = a.parentElement) bg = getComputedStyle(a).backgroundColor;
+      if (bg === "rgba(0, 0, 0, 0)" || bg === "transparent") bg = "#fff";
+      // Round maximum above the cumulative total, 4 steps (as the page draws it)
+      const steps = 4;
+      const raw = cum[cum.length - 1] / steps;
+      const mag = 10 ** Math.floor(Math.log10(raw));
+      const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((x) => x >= raw)!;
+      const max = step * steps;
+      const k = (n: number) => (n < 1000 ? String(n) : `${+(n / 1000).toFixed(1)}K`);
+      const ml = 44, mr = 24, mt = 12, mb = 34;
+      const pw = w - ml - mr, ph = h - mt - mb;
+      const X = (i: number) => ml + (pw * i) / (labels.length - 1);
+      const Y = (v: number) => mt + ph - (ph * v) / max;
+      const grey = "#505258", grid = "#DDDEE1";
+      let svg = "";
+      for (let i = 0; i <= steps; i++) {
+        const y = Y(step * i);
+        svg += `<line x1="${ml}" x2="${ml + pw}" y1="${y}" y2="${y}" stroke="${grid}" stroke-width="1"/>`;
+        svg += `<text x="${ml - 8}" y="${y + 4}" text-anchor="end" font-size="12" fill="${grey}">${k(step * i)}</text>`;
+      }
+      svg += `<line x1="${ml}" x2="${ml}" y1="${mt}" y2="${mt + ph}" stroke="${grey}" stroke-width="1"/>`;
+      svg += `<line x1="${ml}" x2="${ml + pw}" y1="${mt + ph}" y2="${mt + ph}" stroke="${grey}" stroke-width="1"/>`;
+      labels.forEach((l, i) => {
+        svg += `<line x1="${X(i)}" x2="${X(i)}" y1="${mt + ph}" y2="${mt + ph + 5}" stroke="${grey}" stroke-width="1"/>`;
+        svg += `<text x="${X(i)}" y="${mt + ph + 20}" text-anchor="middle" font-size="12" fill="${grey}">${l}</text>`;
+      });
+      const series: [number[], string][] = [[daily, "var(--ds-chart-categorical-1, #357DE8)"], [cum, "var(--ds-chart-categorical-2, #82B536)"]];
+      for (const [v, color] of series) {
+        svg += `<polyline fill="none" stroke="${color}" stroke-width="2" points="${v.map((x, i) => `${X(i)},${Y(x)}`).join(" ")}"/>`;
+        v.forEach((x, i) => (svg += `<circle cx="${X(i)}" cy="${Y(x)}" r="3.5" fill="${color}"/>`));
+      }
+      const d = document.createElement("div");
+      d.setAttribute("data-screenshot-tweak", "fake-rovo-chart");
+      d.style.cssText = `position:absolute;left:${left + scrollX}px;top:${top + scrollY}px;width:${w}px;height:${h}px;background:${bg};z-index:10;pointer-events:none;font-family:${cs.fontFamily}`;
+      d.innerHTML = `<svg width="${w}" height="${h}" style="font-family:inherit">${svg}</svg>`;
+      document.body.appendChild(d);
+    },
+    [daily, cum, labels] as const,
+  );
+  await card.evaluate((el) => el.setAttribute("data-fake-rovo", "1"));
   return true;
 }
 
