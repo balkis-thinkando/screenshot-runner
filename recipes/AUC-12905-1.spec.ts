@@ -18,6 +18,9 @@ const QUERY = "Does Jira allow me to color code my work items?";
 const sources = (page: Page) => page.getByTestId("sources-bar-button");
 const followUp = (page: Page) => page.getByTestId("lumina-input-to-chat-submit");
 
+/** The answer card, marked in navigate() before it was expanded; falls back to answerCard(). */
+const card = (page: Page) => page.locator("[data-screenshot-answer-card]").or(answerCard(page)).first();
+
 runRecipe({
   file: "AUC-12905-1",
   assetId: "k2pc845v2x04seqy0352ea81f03l7uqw",
@@ -29,10 +32,19 @@ runRecipe({
     test.setTimeout(240_000);
     await openSearchPage(page, s, QUERY);
     await waitForAnswer(page);
-    await answerCard(page).getByRole("button", { name: "Show more" }).click();
-    await page.waitForTimeout(2_000);
+    // A short answer has no "Show more", and the buttons can render late: unbounded waits here ran the test
+    // into its time limit in CI (SHOT-102, SHOT-110). Every wait is bounded; missing parts fail the checks instead.
+    // Expanded, the card has no "Show less" button, so answerCard() no longer finds it: mark it first
+    await answerCard(page).evaluate((el) => el.setAttribute("data-screenshot-answer-card", ""), undefined, { timeout: 10_000 }).catch(() => {});
+    const more = card(page).getByRole("button", { name: "Show more" });
+    if (await more.isVisible().catch(() => false) || (await more.waitFor({ timeout: 10_000 }).then(() => true).catch(() => false))) {
+      await more.click({ timeout: 10_000 }).catch(() => {});
+      await page.waitForTimeout(2_000);
+    }
+    const likeButton = page.getByTestId("ai-answer-like-button");
+    await likeButton.waitFor({ timeout: 20_000 }).catch(() => {});
     // The end of the answer near the bottom of the window
-    await page.getByTestId("ai-answer-like-button").evaluate((el) => {
+    if (await likeButton.isVisible()) await likeButton.evaluate((el) => {
       let box = el.parentElement;
       while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
       const target = box ?? document.scrollingElement!;
@@ -50,10 +62,10 @@ runRecipe({
     await fakeProfileNames(page);
     await anonymize(page, "AW", FAKE_PEOPLE);
     // The answer runs past the top of the window: outline its visible part, down to the AI notice and buttons
-    const card = await answerCard(page).boundingBox();
-    const like = await page.getByTestId("ai-answer-like-button").boundingBox();
-    const filters = await page.getByTestId("filter-all").boundingBox();
-    if (card && like && filters) {
+    const cardBox = await card(page).boundingBox({ timeout: 5_000 }).catch(() => null);
+    const like = await page.getByTestId("ai-answer-like-button").boundingBox({ timeout: 5_000 }).catch(() => null);
+    const filters = await page.getByTestId("filter-all").boundingBox({ timeout: 5_000 }).catch(() => null);
+    if (cardBox && like && filters) {
       await page.evaluate(([c, l, f]) => {
         const top = Math.max(c.y, f.y + f.height + 16);
         const d = document.createElement("div");
@@ -61,13 +73,13 @@ runRecipe({
         d.dataset.screenshotMask = "answer";
         Object.assign(d.style, { position: "fixed", left: `${c.x}px`, top: `${top}px`, width: `${c.width}px`, height: `${l.y + l.height - top}px`, pointerEvents: "none" });
         document.body.appendChild(d);
-      }, [card, like, filters] as const);
+      }, [cardBox, like, filters] as const);
       await spotlightAreas(page, [await searchBox(page), page.locator("#screenshot-answer-box")]);
     }
   },
 
   // Rovo's answer changes on every run; so do the results below it
-  mask: (page) => [page.locator('[data-screenshot-mask="answer"]'), answerCard(page)],
+  mask: (page) => [page.locator('[data-screenshot-mask="answer"]'), card(page)],
 
   async checks(page, c) {
     await c.check("Search bar shows the question", async () => {
@@ -76,14 +88,14 @@ runRecipe({
     });
 
     await c.check("Rovo answer card above the results", async () => {
-      const heading = (await answerHeading(page).innerText().catch(() => "")).trim();
-      const len = (await answerCard(page).innerText().catch(() => "")).length;
+      const heading = (await answerHeading(page).innerText({ timeout: 5_000 }).catch(() => "")).trim();
+      const len = (await card(page).innerText({ timeout: 5_000 }).catch(() => "")).length;
       return { pass: len > 200, detail: `Heading "${heading}" (lesson: "Answer"); ${len} characters` };
     });
 
     await c.check("Sources shown under the answer as cards with Copy link", async () => {
       const cards = await page.getByRole("button", { name: "Copy link" }).count();
-      const bar = (await sources(page).innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+      const bar = (await sources(page).innerText({ timeout: 5_000 }).catch(() => "")).replace(/\s+/g, " ").trim();
       const related = await page.getByText("Related links", { exact: true }).first().isVisible().catch(() => false);
       return {
         pass: cards > 0,
