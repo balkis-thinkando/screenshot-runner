@@ -164,7 +164,9 @@ jobs:
         run: node scripts/summary.mjs
 
       - name: Commit new baselines
-        if: env.UPDATE_BASELINES == 'true'
+        # Also after a failed summary: a screenshot that did not reach its screen writes no baseline, so one slow
+        # page must not block saving all the others (run of 19 Nov 2026, AUC-412-3)
+        if: ${{ !cancelled() && env.UPDATE_BASELINES == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
