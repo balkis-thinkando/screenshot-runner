@@ -43,12 +43,11 @@ runRecipe({
     }
     const likeButton = page.getByTestId("ai-answer-like-button");
     await likeButton.waitFor({ timeout: 20_000 }).catch(() => {});
-    // The end of the answer near the bottom of the window
-    if (await likeButton.isVisible()) await likeButton.evaluate((el) => {
-      let box = el.parentElement;
-      while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
-      const target = box ?? document.scrollingElement!;
-      target.scrollTop += el.getBoundingClientRect().bottom - (innerHeight - 220);
+    // As in the lesson, the page stays at the top: the answer starts right under the filters (SHOT-111 feedback:
+    // the outline must cover Rovo's answer, not just its end)
+    await page.evaluate(() => {
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>("*"))) if (el.scrollTop > 0) el.scrollTop = 0;
+      window.scrollTo(0, 0);
     });
     await page.waitForTimeout(1_500);
     await page.mouse.move(1279, 799);
@@ -61,19 +60,24 @@ runRecipe({
     await fakePersonalSpaces(page);
     await fakeProfileNames(page);
     await anonymize(page, "AW", FAKE_PEOPLE);
-    // The answer runs past the top of the window: outline its visible part, down to the AI notice and buttons
+    // Outline Rovo's answer as in the lesson: from its heading down to the end of the answer text (just above
+    // "Related links" or the sources bar), cut at the bottom of the window when the answer is long
+    const heading = await answerHeading(page).boundingBox({ timeout: 5_000 }).catch(() => null);
     const cardBox = await card(page).boundingBox({ timeout: 5_000 }).catch(() => null);
-    const like = await page.getByTestId("ai-answer-like-button").boundingBox({ timeout: 5_000 }).catch(() => null);
-    const filters = await page.getByTestId("filter-all").boundingBox({ timeout: 5_000 }).catch(() => null);
-    if (cardBox && like && filters) {
-      await page.evaluate(([c, l, f]) => {
-        const top = Math.max(c.y, f.y + f.height + 16);
+    const endEl = card(page).getByText(/^(Related links|Sources)$/).or(card(page).getByText(/^Referencing \d+ sources?$/i)).first();
+    const end = await endEl.boundingBox({ timeout: 3_000 }).catch(() => null);
+    const like = await page.getByTestId("ai-answer-like-button").boundingBox({ timeout: 3_000 }).catch(() => null);
+    if (heading && cardBox) {
+      const vh = page.viewportSize()?.height ?? 800;
+      const top = heading.y - 12;
+      const bottom = Math.min(end ? end.y - 8 : like ? like.y - 8 : cardBox.y + cardBox.height, vh - 12);
+      await page.evaluate(([x, w, t, b]) => {
         const d = document.createElement("div");
         d.id = "screenshot-answer-box";
         d.dataset.screenshotMask = "answer";
-        Object.assign(d.style, { position: "fixed", left: `${c.x}px`, top: `${top}px`, width: `${c.width}px`, height: `${l.y + l.height - top}px`, pointerEvents: "none" });
+        Object.assign(d.style, { position: "fixed", left: `${x}px`, top: `${t}px`, width: `${w}px`, height: `${b - t}px`, pointerEvents: "none" });
         document.body.appendChild(d);
-      }, [cardBox, like, filters] as const);
+      }, [cardBox.x, cardBox.width, top, bottom] as const);
       await spotlightAreas(page, [await searchBox(page), page.locator("#screenshot-answer-box")]);
     }
   },
