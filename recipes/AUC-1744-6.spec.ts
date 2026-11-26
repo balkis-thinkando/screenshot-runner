@@ -9,7 +9,8 @@
 // site's state.
 
 import { Page } from "@playwright/test";
-import { runRecipe } from "../lib/recipe";
+import { Blocked, runRecipe } from "../lib/recipe";
+import { Settings } from "../lib/supabase";
 import { anonymize, fakeSignedInUser, FAKE_PEOPLE, renameOrg, spotlight } from "../lib/tweaks";
 import { closePopups, itemTexts, missingFrom, openWikiPath } from "../lib/b3-conf";
 
@@ -19,6 +20,25 @@ const panel = (page: Page) => main(page).getByRole("tabpanel").first();
 const row = (page: Page) => panel(page).locator("tr, [role=row]").filter({ hasText: "Anonymous users" }).first();
 const table = (page: Page) => panel(page).locator("table, [role=table], [role=grid]").first();
 
+/** Confluence's generic error page ("Something went wrong."), shown on a temporary server error. */
+const errorPage = (page: Page) => page.getByRole("heading", { name: /Something went wrong/ }).first();
+
+/** Opens Global permissions, trying again when Confluence shows its temporary error page. */
+async function openGlobalPermissions(page: Page, s: Settings) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await openWikiPath(page, s, "/admin/permissions/global", tab(page), "Global permissions");
+      return;
+    } catch (e) {
+      if (e instanceof Blocked) throw e;
+      const outage = await errorPage(page).isVisible().catch(() => false);
+      if (!outage) throw e;
+      if (attempt >= 3) throw new Error("Global permissions did not load: Confluence showed 'Something went wrong.'");
+      await page.waitForTimeout(10_000);
+    }
+  }
+}
+
 runRecipe({
   file: "AUC-1744-6",
   assetId: "AT14QEL",
@@ -26,7 +46,7 @@ runRecipe({
   product: "confluence",
 
   async navigate(page, s) {
-    await openWikiPath(page, s, "/admin/permissions/global", tab(page), "Global permissions");
+    await openGlobalPermissions(page, s);
     await closePopups(page);
     await tab(page).click();
     await row(page).waitFor({ timeout: 30_000 });
