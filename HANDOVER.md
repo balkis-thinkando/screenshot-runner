@@ -185,7 +185,10 @@ Verdicts: `unchanged`, `needs_review`, `cosmetic`, `material`, `steps_broken`, `
 ### Other Supabase objects
 - No storage bucket. Captures are never stored in Supabase; they are attached to the SHOT work item only
   (bucket `recipe-captures` deleted 5 Nov 2026).
-- **Edge Function `scan-lesson-screenshots`** (v4) — builds the inventory:
+- **Edge Function `scan-lesson-screenshots`** (v9, source in `supabase/functions/scan-lesson-screenshots/`) — builds the inventory.
+  Runs every Monday 05:30 UTC and on day 1 before the monthly check (`screenshot-inventory.yml` →
+  `scripts/scan-inventory.mjs`), logged in `health.sync_runs` source `screenshots`; `{"cleanup": true}` removes
+  lessons no longer in Assets/`lessons`. Details:
   reads all Lessons from Assets (secrets `ATLASSIAN_API_TOKEN`, `ATLASSIAN_EMAIL`), keeps those whose
   Contentful ID exists in `lessons`, fetches each published page, regex-scans `<main>` for `<img>` on
   dam-cdn/ctfassets and the preceding `<h1-4>`, upserts `alcat_lessons`, replaces `lesson_screenshots`.

@@ -1,0 +1,55 @@
+# Screenshot inventory: rebuilds public.lesson_screenshots and public.alcat_lessons from the published
+# On Demand lesson pages (Edge Function scan-lesson-screenshots, one batch of 50 lessons at a time), then
+# removes lessons that no longer exist. Runs every Monday, and on day 1 of each month before the monthly
+# screenshot check (monthly-check.yml calls it). Takes about 6 minutes.
+#
+# The run is logged in health.sync_runs (source "screenshots"). The job fails, and GitHub emails you, when
+# a batch fails twice, more than 10% of lesson pages could not be read, or far fewer screenshots were found
+# than before (the lesson site sometimes serves empty pages; run it again later).
+#
+# Run it by hand: Actions > Screenshot inventory > Run workflow.
+# Secrets: SUPABASE_SERVICE_ROLE_KEY. The Atlassian token lives in the Edge Function's own secrets.
+
+name: Screenshot inventory
+
+on:
+  schedule:
+    - cron: "30 5 * * 1" # 05:30 UTC every Monday
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      SUPABASE_SERVICE_ROLE_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screenshot-inventory
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: https://pduavmiyphkoekslpeld.supabase.co # project API address (not secret)
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SYNC_TRIGGER: ${{ github.event_name == 'workflow_dispatch' && 'manual' || 'schedule' }}
+      SYNC_LOG_PATH: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Scan lesson pages
+        run: node scripts/scan-inventory.mjs
+
+      - name: Log a cancelled or timed-out run as failed
+        if: cancelled()
+        run: node scripts/scan-inventory.mjs mark-stuck-failed

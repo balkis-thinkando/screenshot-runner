@@ -23,6 +23,10 @@
 # summary, but nothing is updated, ticketed or opened.
 # Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
 #
+# On day 1 (and when run by hand for all products) the screenshot inventory is rebuilt first
+# (screenshot-inventory.yml), so the check compares against the lesson pages as published today. If the
+# inventory scan fails, the check still runs on the previous inventory.
+#
 # Secrets: SUPABASE_SERVICE_ROLE_KEY, AUTH_STATE_JSON (auth/state.json of the test account),
 # ANTHROPIC_API_KEY (the AI review is skipped without it).
 
@@ -58,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       product: ${{ steps.pick.outputs.product }}
+      scan: ${{ steps.pick.outputs.scan }}
     steps:
       - uses: actions/checkout@v4
       - id: pick
@@ -71,10 +76,23 @@ jobs:
           fi
           echo "product=$p" >> "$GITHUB_OUTPUT"
           echo "Product today: ${p:-nothing scheduled}"
+          # Rebuild the screenshot inventory before the month's first check, or a manual run of all products
+          scan=false
+          if [ "$p" = "all" ] || { [ "${{ github.event_name }}" = "schedule" ] && [ "$(date -u +%-d)" = "1" ]; }; then scan=true; fi
+          echo "scan=$scan" >> "$GITHUB_OUTPUT"
+          echo "Rebuild screenshot inventory first: $scan"
+
+  inventory:
+    needs: pick
+    if: needs.pick.outputs.scan == 'true'
+    uses: ./.github/workflows/screenshot-inventory.yml
+    secrets:
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
   check:
-    needs: pick
-    if: needs.pick.outputs.product != ''
+    needs: [pick, inventory]
+    # Runs after the inventory scan, or without it when it was skipped or failed
+    if: ${{ !cancelled() && needs.pick.outputs.product != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     permissions:
