@@ -10,11 +10,28 @@
 
 import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
-import { anonymize, fakeSignedInUser, FAKE_PEOPLE, renameOrg, spotlight } from "../lib/tweaks";
-import { accessOptions, fakeShareNames, openGeneralAccess, openPage, openShare, shareDialog } from "../lib/b3-conf";
+import { anonymize, fakeSignedInUser, FAKE_PEOPLE, hideMessages, renameOrg, spotlight } from "../lib/tweaks";
+import { accessOptions, closePopups, fakeShareNames, openGeneralAccess, openPage, shareButton, shareDialog } from "../lib/b3-conf";
 import { fakeByline, hideBackToTop } from "../lib/b2-editor";
 
 const option = (page: Page, name: string) => accessOptions(page).getByText(name, { exact: true }).first();
+
+/** Opens the Share dialog (nothing is typed or changed). The "Join your team on Loom" flag that appears after the
+ *  page loads is hidden first (display only), and the click is retried once if the dialog does not open. */
+async function openShareDialog(page: Page) {
+  await hideMessages(page, ["Join your team on Loom"]);
+  await closePopups(page);
+  const button = shareButton(page);
+  await button.waitFor({ timeout: 20_000 });
+  await button.click();
+  const opened = await shareDialog(page).waitFor({ timeout: 10_000 }).then(() => true, () => false);
+  if (!opened) {
+    await hideMessages(page, ["Join your team on Loom"]);
+    await button.click();
+    await shareDialog(page).waitFor({ timeout: 20_000 });
+  }
+  await page.waitForTimeout(1_500);
+}
 
 runRecipe({
   file: "AUC-403-2",
@@ -24,7 +41,7 @@ runRecipe({
 
   async navigate(page, s) {
     await openPage(page, s);
-    await openShare(page);
+    await openShareDialog(page);
     await openGeneralAccess(page);
   },
 
