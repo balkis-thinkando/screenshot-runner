@@ -52,6 +52,17 @@ in Claude Code sessions with the owner.
 | AUC-16081-1 | Use Rovo across your organization | Page replaced by AI and Rovo > Access; expect steps_broken |
 | AUC-1835-1 | Manage global automation settings | More actions menu open; owners neutralized |
 
+### Recipe batches (26 Nov 2026)
+- Since then, recipes are written in batches with the `write-recipes` skill. `screenshot_recipes` now has 209
+  rows (82 before batch 3).
+- Batch 3 (branch `recipes-batch3`): 127 recipes for 50 lessons in Jira boards, search, reports and plans,
+  Jira admin, Confluence, JSM and Assets. Helpers are in `lib/b3-*.ts`. Draft rows were inserted on 26 Nov
+  2026; each row's notes give the dry-run result.
+- Open items from batch 3:
+  - AUC-403-4: the Create menu is never opened (clicking Create may create a draft).
+  - Test data that needs the owner's OK: a kanban board grouped by assignee, "Show custom filters" on, a
+    form in ITS, a service, access to the ITS knowledge base, and a dashboard the test account owns.
+
 ### Test site (learning-vkpy) and test account
 - Dedicated test account: org admin, Jira admin, JSM agent licence (needed to edit work items), Assets access.
 - Jira pages must be opened through `https://id.atlassian.com/login?continue=...` (`lib/jira.ts`
