@@ -12,10 +12,31 @@ import { Page } from "@playwright/test";
 import { runRecipe } from "../lib/recipe";
 import { hideSidebar } from "../lib/confluence";
 import { anonymize, fakeSignedInUser, FAKE_PEOPLE, renameOrg, spotlight } from "../lib/tweaks";
-import { fakeShareNames, itemTexts, missingFrom, openPage, openShare, shareDialog } from "../lib/b3-conf";
+import { closePopups, fakeShareNames, itemTexts, missingFrom, openPage, shareDialog } from "../lib/b3-conf";
 import { fakeByline, hideBackToTop } from "../lib/b2-editor";
 
 const moreMenu = (page: Page) => page.getByRole("menu").filter({ has: page.getByRole("menuitem", { name: /Inspect permissions/ }) }).last();
+
+/** The page header's Share button (its name now includes the access level: "Share, Open - ..."). */
+const shareButton = (page: Page) => page.getByRole("main").getByRole("button", { name: /^Share\b/ }).first();
+
+/** Opens the Share dialog (nothing is typed or changed). A click made while the page is still settling can be lost,
+ *  so the button is clicked again until the dialog shows. */
+async function openShareDialog(page: Page) {
+  await closePopups(page);
+  await shareButton(page).waitFor({ timeout: 30_000 });
+  for (let i = 0; i < 3; i++) {
+    if (await shareDialog(page).isVisible().catch(() => false)) break;
+    await shareButton(page).click();
+    const opened = await shareDialog(page).waitFor({ timeout: 10_000 }).then(() => true, () => false);
+    if (opened) break;
+    // A flag or late render may have taken the click: clear it and try again
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(2_000);
+  }
+  await shareDialog(page).waitFor({ timeout: 10_000 });
+  await page.waitForTimeout(1_500);
+}
 
 runRecipe({
   file: "AUC-410-4",
@@ -26,7 +47,7 @@ runRecipe({
   async navigate(page, s) {
     await openPage(page, s);
     await hideSidebar(page);
-    await openShare(page);
+    await openShareDialog(page);
     await shareDialog(page).getByRole("button", { name: /^(More|More actions|More options|Show more)$/ }).last().click();
     await moreMenu(page).waitFor({ timeout: 15_000 });
     await page.waitForTimeout(1_000);
